@@ -234,7 +234,7 @@ The settings go in a ``recon_params`` block of the config file; all keys are opt
         engine: 'pyrecon'
         algorithm: 'IterativeFFTReconstruction'   # or MultiGridReconstruction, IterativeFFTParticleReconstruction
         convention: 'recsym'                      # or 'reciso'
-        smoothing_radius: 15.                     # Mpc/h, Gaussian exp(-k^2 R^2 / 2)
+        smoothing_radius: {LRG: 15., ELG: 15., QSO: 30.}  # Mpc/h, Gaussian exp(-k^2 R^2 / 2); or a single float
         nmesh: 512                                # reconstruction mesh (or cellsize: 4.)
         bias: {LRG: 2.0, ELG: 1.2, QSO: 2.1}      # or a single float
         f: null                                   # null: simulation f_growth at z_mock if want_rsd, else 0
@@ -321,7 +321,7 @@ radius of the catalog; flat priors on :math:`\alpha_{\rm iso}, \alpha_{\rm AP}`,
 :math:`d\beta` and :math:`\Sigma_s`; Gaussian priors on the BAO damping
 :math:`(\Sigma_\parallel, \Sigma_\perp)` with widths (2, 1) Mpc/h and means (pre / post
 reconstruction, Mpc/h) BGS (10, 6.5) / (8, 3), LRG (9, 4.5) / (6, 3), ELG (8.5, 4.5) / (6, 3),
-QSO (9, 3.5) / (6, 3) (DESI reconstructs QSOs with a 30 Mpc/h smoothing radius);
+QSO (9, 3.5) / (6, 3) (assuming the default 30 Mpc/h QSO smoothing radius);
 the correlation function monopole and quadrupole in :math:`60 < s < 150` Mpc/h with
 4 Mpc/h bins and the ``pcs2`` broadband, marginalized analytically. The settings go in
 a ``bao_params`` block; all keys are optional::

@@ -35,6 +35,8 @@ def test_recon_params():
     from abacusnbody.hod.recon import (
         DEFAULT_RECON_BIAS,
         DEFAULT_RECON_PARAMS,
+        DEFAULT_RECON_SMOOTHING_RADIUS,
+        _get_per_tracer,
         get_recon_params,
     )
 
@@ -42,6 +44,14 @@ def test_recon_params():
     assert params == DEFAULT_RECON_PARAMS
     assert params['bias'] == DEFAULT_RECON_BIAS
     assert params['bias'] is not DEFAULT_RECON_PARAMS['bias']
+    assert params['smoothing_radius'] == {'LRG': 15.0, 'ELG': 15.0, 'QSO': 30.0}
+    assert params['smoothing_radius'] is not DEFAULT_RECON_SMOOTHING_RADIUS
+    assert (
+        _get_per_tracer(params['smoothing_radius'], 'QSO', 'smoothing_radius') == 30.0
+    )
+    assert _get_per_tracer(10.0, 'QSO', 'smoothing_radius') == 10.0
+    with pytest.raises(KeyError):
+        _get_per_tracer({'LRG': 15.0}, 'ELG', 'smoothing_radius')
 
     params = get_recon_params({'convention': 'RecIso', 'bias': 1.5})
     assert params['convention'] == 'reciso'
@@ -57,6 +67,9 @@ def test_recon_params():
         get_recon_params({'convention': 'recfoo'})
     with pytest.raises(ValueError):
         get_recon_params({'smoothing': 15.0})  # typo of smoothing_radius
+    for radius in (0.0, {'LRG': 15.0, 'QSO': -1.0}):
+        with pytest.raises(ValueError):
+            get_recon_params({'smoothing_radius': radius})
     with pytest.raises(NotImplementedError):
         get_recon_params({'engine': 'foo'})
 
@@ -184,6 +197,41 @@ def test_recon_real_space_and_bias(hod):
 
     with pytest.raises(KeyError):
         ball.run_recon(mock_dict, dict(RECON_PARAMS, bias={'LRG': 2.0}))
+
+
+def test_recon_per_tracer_smoothing(hod):
+    pytest.importorskip('pyrecon')
+    ball, mock_dict = hod['ball'], hod['mock_dict']
+
+    radius = {'LRG': 4.0, 'ELG': 6.0}
+    recon_dict = ball.run_recon(
+        mock_dict, dict(RECON_PARAMS, smoothing_radius=radius), Nthread=2
+    )
+    for tr in mock_dict:
+        assert recon_dict[tr]['recon_info']['smoothing_radius'] == radius[tr]
+    # the LRG reconstruction used the LRG radius
+    lrg = {'LRG': mock_dict['LRG']}
+    for R, same in ((4.0, True), (6.0, False)):
+        rec = ball.run_recon(lrg, dict(RECON_PARAMS, smoothing_radius=R), Nthread=2)
+        assert np.array_equal(rec['LRG']['x'], recon_dict['LRG']['x']) == same
+
+    with pytest.raises(KeyError):
+        ball.run_recon(mock_dict, dict(RECON_PARAMS, smoothing_radius={'LRG': 4.0}))
+
+
+def test_rec_settings_per_tracer():
+    tools_cv = pytest.importorskip('abacusnbody.hod.zcv.tools_cv')
+
+    config = {
+        'HOD_params': {'tracer_flags': {'LRG': False, 'ELG': True, 'QSO': False}},
+        'recon_params': {
+            'convention': 'reciso',
+            'smoothing_radius': {'LRG': 15.0, 'ELG': 10.0, 'QSO': 30.0},
+        },
+    }
+    assert tools_cv._get_rec_settings(config) == ('reciso', 10.0)
+    config['recon_params']['convention'] = 'recsym'
+    assert tools_cv._get_rec_settings(config) == ('recsym', None)
 
 
 def test_recon_clustering(hod):

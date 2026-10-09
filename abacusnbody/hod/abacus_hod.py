@@ -1863,7 +1863,8 @@ class AbacusHOD:
                 * ``algorithm``: str, ``'IterativeFFTReconstruction'`` (default),
                   ``'MultiGridReconstruction'`` or ``'IterativeFFTParticleReconstruction'``.
                 * ``convention``: str, ``'recsym'`` (default) or ``'reciso'``.
-                * ``smoothing_radius``: float, Gaussian smoothing in Mpc/h, default 15.
+                * ``smoothing_radius``: float or per-tracer dict, Gaussian smoothing in
+                  Mpc/h, default ``{LRG: 15., ELG: 15., QSO: 30.}``.
                 * ``nmesh`` or ``cellsize``: reconstruction mesh, default ``nmesh=512``.
                 * ``bias``: float or per-tracer dict, default ``{LRG: 2.0, ELG: 1.2, QSO: 2.1}``.
                 * ``f``: float, growth rate; default ``None`` uses the simulation
@@ -1891,7 +1892,7 @@ class AbacusHOD:
             lattice/randoms) and ``'recon_info'`` (settings used) for each tracer.
             ``compute_power`` and ``apply_cv`` accept it in place of ``mock_dict``.
         """
-        from .recon import _get_bias, get_recon_params, run_recon_pyrecon
+        from .recon import _get_per_tracer, get_recon_params, run_recon_pyrecon
 
         if self.halo_lc:
             raise NotImplementedError(
@@ -1910,7 +1911,10 @@ class AbacusHOD:
         recon_dict = {}
         for tr in mock_dict:
             start = time.time()
-            bias = _get_bias(params['bias'], tr)
+            bias = _get_per_tracer(params['bias'], tr, 'bias')
+            smoothing_radius = _get_per_tracer(
+                params['smoothing_radius'], tr, 'smoothing_radius'
+            )
             pos = np.stack(
                 (mock_dict[tr]['x'], mock_dict[tr]['y'], mock_dict[tr]['z']), axis=1
             )
@@ -1921,7 +1925,7 @@ class AbacusHOD:
                 bias,
                 algorithm=params['algorithm'],
                 convention=params['convention'],
-                smoothing_radius=params['smoothing_radius'],
+                smoothing_radius=smoothing_radius,
                 nmesh=params['nmesh'],
                 cellsize=params['cellsize'],
                 los=params['los'],
@@ -1953,7 +1957,7 @@ class AbacusHOD:
                 'engine': params['engine'],
                 'algorithm': params['algorithm'],
                 'convention': params['convention'],
-                'smoothing_radius': params['smoothing_radius'],
+                'smoothing_radius': smoothing_radius,
                 'nmesh': params['nmesh'],
                 'cellsize': params['cellsize'],
                 'los': params['los'],

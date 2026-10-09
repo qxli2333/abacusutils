@@ -113,7 +113,7 @@ recon_params:
     engine: 'pyrecon'
     algorithm: 'IterativeFFTReconstruction'   # or MultiGridReconstruction, IterativeFFTParticleReconstruction
     convention: 'recsym'                      # or 'reciso'
-    smoothing_radius: 15.                     # Mpc/h
+    smoothing_radius: {LRG: 15., ELG: 15., QSO: 30.}  # Mpc/h; or a single float
     nmesh: 512                                # reconstruction mesh (or cellsize)
     bias: {LRG: 2.0, ELG: 1.2, QSO: 2.1}      # fiducial bias used to estimate the displacement
     f: null                                   # null: simulation f_growth at z_mock if want_rsd, else 0

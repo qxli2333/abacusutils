@@ -39,7 +39,8 @@ def _get_rec_settings(config):
     """
     LCV: reconstruction convention ('recsym' or 'reciso') and smoothing radius R,
     read from ``recon_params`` (falling back to the legacy ``HOD_params`` keys
-    ``rec_algo`` and ``smoothing``). R is None for RecSym.
+    ``rec_algo`` and ``smoothing``). R is None for RecSym. A per-tracer R is taken
+    for the single tracer enabled in ``HOD_params['tracer_flags']``.
     """
     recon_params = config.get('recon_params') or {}
     if 'convention' in recon_params:
@@ -53,6 +54,11 @@ def _get_rec_settings(config):
         R = None
     elif rec_algo == 'reciso':
         assert R is not None, 'RecIso requires the smoothing radius'
+        if isinstance(R, dict):
+            flags = config['HOD_params'].get('tracer_flags', {})
+            tracers = [tr for tr, on in flags.items() if on]
+            assert len(tracers) == 1, 'Currently implemented only a single tracer'
+            R = R[tracers[0]]
     else:
         raise ValueError(f'Unknown reconstruction convention {rec_algo!r}')
     return rec_algo, R

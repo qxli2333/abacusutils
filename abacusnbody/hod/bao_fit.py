@@ -8,7 +8,7 @@ supporting papers):
 
 * the BAO template of Chen et al. 2024 (desilike ``DampedBAOWigglesTracer*Multipoles``,
   ``model='standard'``), with the reconstruction convention and smoothing radius of the
-  catalog (RecSym, 15 Mpc/h by default);
+  catalog (RecSym; 15 Mpc/h, or 30 Mpc/h for QSOs, by default);
 * dilation parameters :math:`\alpha_{\rm iso}, \alpha_{\rm AP}` (``qiso``, ``qap``)
   with flat priors; flat priors on ``b1``, ``dbeta`` and :math:`\Sigma_s`;
 * Gaussian priors on the BAO damping :math:`\Sigma_\parallel, \Sigma_\perp` (widths 2 and
@@ -34,6 +34,8 @@ import numba
 import numpy as np
 from scipy.linalg import block_diag
 from scipy.special import eval_legendre, spherical_jn
+
+from .recon import DEFAULT_RECON_SMOOTHING_RADIUS
 
 __all__ = [
     'DEFAULT_BAO_PARAMS',
@@ -547,7 +549,10 @@ def fit_bao(
         mode = recon_info['convention'] if recon else ''
     smoothing_radius = params['smoothing_radius']
     if smoothing_radius is None:
-        smoothing_radius = recon_info['smoothing_radius'] if recon else 15.0
+        if recon:
+            smoothing_radius = recon_info['smoothing_radius']
+        else:
+            smoothing_radius = DEFAULT_RECON_SMOOTHING_RADIUS.get(tracer, 15.0)
 
     # data vector and covariance
     poles = tuple(int(ell) for ell in cv_dict['poles'])
