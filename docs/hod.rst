@@ -320,7 +320,8 @@ The default settings follow the DESI DR2 BAO baseline: the template of
 radius of the catalog; flat priors on :math:`\alpha_{\rm iso}, \alpha_{\rm AP}`, the bias,
 :math:`d\beta` and :math:`\Sigma_s`; Gaussian priors on the BAO damping
 :math:`(\Sigma_\parallel, \Sigma_\perp)` with widths (2, 1) Mpc/h and means (pre / post
-reconstruction, Mpc/h) BGS (10, 6.5) / (8, 3), LRG (9, 4.5) / (6, 3), ELG (8.5, 4.5) / (6, 3);
+reconstruction, Mpc/h) BGS (10, 6.5) / (8, 3), LRG (9, 4.5) / (6, 3), ELG (8.5, 4.5) / (6, 3),
+QSO (9, 3.5) / (6, 3) (DESI reconstructs QSOs with a 30 Mpc/h smoothing radius);
 the correlation function monopole and quadrupole in :math:`60 < s < 150` Mpc/h with
 4 Mpc/h bins and the ``pcs2`` broadband, marginalized analytically. The settings go in
 a ``bao_params`` block; all keys are optional::

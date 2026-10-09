@@ -35,6 +35,27 @@ def test_get_bao_params():
             get_bao_params(bad)
 
 
+def test_get_sigma_priors():
+    from abacusnbody.hod.bao_fit import _get_sigma_priors
+
+    for tracer in ('BGS', 'LRG', 'ELG', 'QSO'):
+        for recon in (False, True):
+            priors = _get_sigma_priors(None, tracer, recon)
+            assert priors['sigmapar'][1] == 2.0 and priors['sigmaper'][1] == 1.0
+    assert _get_sigma_priors(None, 'QSO', False) == {
+        'sigmapar': (9.0, 2.0),
+        'sigmaper': (3.5, 1.0),
+    }
+    assert _get_sigma_priors(None, 'QSO', True) == {
+        'sigmapar': (6.0, 2.0),
+        'sigmaper': (3.0, 1.0),
+    }
+    custom = {'sigmapar': [5.0, 1.0], 'sigmaper': [2.0, 0.5]}
+    assert _get_sigma_priors(custom, 'Lya', True)['sigmaper'] == (2.0, 0.5)
+    with pytest.raises(KeyError):
+        _get_sigma_priors(None, 'Lya', True)
+
+
 def test_rebin_xi_poles():
     from abacusnbody.hod.bao_fit import rebin_xi_poles
 

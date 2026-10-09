@@ -46,11 +46,23 @@ __all__ = [
     'rebin_xi_poles',
 ]
 
-# Means of the Gaussian priors on (Sigma_par, Sigma_per) in Mpc/h used by DESI DR1/DR2,
-# before and after reconstruction; the prior widths are DESI_SIGMA_PRIOR_WIDTHS.
+# Means of the Gaussian priors on (Sigma_par, Sigma_per) in Mpc/h used by DESI DR1/DR2
+# (DESI 2024 III, table 6), before and after reconstruction; the prior widths are
+# DESI_SIGMA_PRIOR_WIDTHS. The QSO post-reconstruction values assume DESI's 30 Mpc/h
+# smoothing radius.
 DESI_SIGMA_PRIORS = {
-    'pre': {'BGS': (10.0, 6.5), 'LRG': (9.0, 4.5), 'ELG': (8.5, 4.5)},
-    'post': {'BGS': (8.0, 3.0), 'LRG': (6.0, 3.0), 'ELG': (6.0, 3.0)},
+    'pre': {
+        'BGS': (10.0, 6.5),
+        'LRG': (9.0, 4.5),
+        'ELG': (8.5, 4.5),
+        'QSO': (9.0, 3.5),
+    },
+    'post': {
+        'BGS': (8.0, 3.0),
+        'LRG': (6.0, 3.0),
+        'ELG': (6.0, 3.0),
+        'QSO': (6.0, 3.0),
+    },
 }
 DESI_SIGMA_PRIOR_WIDTHS = (2.0, 1.0)
 
