@@ -104,6 +104,48 @@ clustering_params:
     pi_bin_size: 5
 
 # ===========================================================================================
+# The following dictionaries are for reconstruction and post-reconstruction clustering with
+# linear control variates (see scripts/hod/run_recon.py). They are not needed otherwise.
+
+# reconstruction, run after the HOD and before measuring clustering (requires pyrecon)
+recon_params:
+    want_recon: True
+    engine: 'pyrecon'
+    algorithm: 'IterativeFFTReconstruction'   # or MultiGridReconstruction, IterativeFFTParticleReconstruction
+    convention: 'recsym'                      # or 'reciso'
+    smoothing_radius: 15.                     # Mpc/h
+    nmesh: 512                                # reconstruction mesh (or cellsize)
+    bias: {LRG: 2.0, ELG: 1.2, QSO: 2.1}      # fiducial bias used to estimate the displacement
+    f: null                                   # null: simulation f_growth at z_mock if want_rsd, else 0
+    los: 'z'
+    shifted_field: 'lattice'                  # how to sample the shifted uniform field: 'lattice' or 'randoms'
+    lattice_nmesh: 576                        # same as the power spectrum mesh
+    recon_kwargs: {}                          # e.g. {fft_engine: 'fftw'}
+    run_kwargs: {}                            # e.g. {niterations: 3}
+    cv_type: 'lcv'                            # control variates for post-recon clustering ('lcv' or null)
+
+# linear control variates (LCV) inputs, created once with
+#   python -m abacusnbody.hod.zcv.ic_fields --path2config config/abacus_hod.yaml
+#   python -m abacusnbody.hod.zcv.linear_fields --path2config config/abacus_hod.yaml [--save_3D_power]
+lcv_params:
+    lcv_dir: '/mnt/marvin1/syuan/scratch/lcv/'
+    ic_dir: '/global/cfs/projectdirs/desi/cosmosim/Abacus/ic/'
+    nmesh: 576
+    kcut: 0.4523893421169302  # k_Ny/2
+
+# power spectrum parameters
+power_params:
+    nbins_k: 288              # nmesh/2
+    nbins_mu: 1
+    poles: [0, 2, 4]
+    k_hMpc_max: 0.9047786842338604  # k_Ny
+    paste: 'TSC'
+    compensated: True
+    interlaced: True
+    logk: False
+    nmesh: 576
+
+# ===========================================================================================
 # The following dictionaries are for using the provided emcee/likelihood templates. They
 # are not needed for using the AbacusHOD class and running HODs.
 

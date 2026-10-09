@@ -52,6 +52,24 @@ def compress_asdf(asdf_fn, table, header):
         )
 
 
+def load_asdf_data(asdf_fn):
+    r"""
+    Read the ``data`` dictionary of an ASDF file written by :func:`compress_asdf`
+    fully into memory, so that the arrays remain valid after the file is closed.
+    """
+    with asdf.open(asdf_fn, lazy_load=False, memmap=False) as af:
+        return {key: np.array(val) for key, val in af['data'].items()}
+
+
+def load_asdf_header(asdf_fn):
+    r"""
+    Read the ``header`` dictionary of an ASDF file written by :func:`compress_asdf`
+    (without reading the data).
+    """
+    with asdf.open(asdf_fn) as af:
+        return dict(af['header'])
+
+
 def load_dens(ic_dir, sim_name, nmesh):
     """
     Load initial condition density field for the given AbacusSummit simulation.

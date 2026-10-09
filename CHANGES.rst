@@ -18,6 +18,24 @@ Fixes
 ~~~~~
 - HOD: fix reseed in NumPy 2 by updating ``parallel_numpy_rng`` dependency
 
+New Features
+~~~~~~~~~~~~
+- HOD: optional BAO reconstruction of the galaxy catalogs before measuring clustering,
+  with ``AbacusHOD.run_recon`` (pyrecon by default; algorithm, convention, smoothing,
+  mesh, bias, growth rate and the sampling of the shifted field are configurable via
+  ``recon_params``)
+- HOD: post-reconstruction P(k) and xi(s) multipoles with linear control variates
+  (``AbacusHOD.apply_lcv``, ``apply_lcv_xi``), and ``AbacusHOD.apply_cv``, which defaults
+  to LCV for reconstructed catalogs and ZCV otherwise
+- power spectrum: ``calc_power`` accepts a reference catalog (``pos_rand``) to subtract,
+  and ``calc_xi_fft`` computes xi multipoles by FFT
+
+Fixes
+~~~~~
+- zcv: ``linear_fields`` with ``save_3D_power`` no longer overwrites the binned linear
+  power spectra; LCV with RecIso had mismatched array shapes; LCV files are read eagerly,
+  avoiding "missing block" errors with recent ASDF
+
 Improvements
 ~~~~~~~~~~~~
 - Sequence defaults like ``poles=[0, 2, 4]`` are now tuples, so they can't be mutated by

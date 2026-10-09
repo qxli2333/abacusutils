@@ -28,9 +28,14 @@ DEFAULTS = {'path2config': 'config/abacus_hod.yaml'}
 
 def main(path2config, alt_simname=None, save_3D_power=False):
     r"""
-    Advect the initial conditions density field to some desired redshift
-    and saving the 3D Fourier fields (delta, delta*mu^2) and power spectra in
-    ASDF files along the way.
+    Compute the auto- and cross-power spectra of the filtered initial conditions
+    density field and its Kaiser-like counterpart (delta, delta*mu^2), used as
+    templates by the linear control variates (LCV) of reconstructed catalogs,
+    and save them in ASDF files. In binned mode, the window function needed by
+    ``run_lcv`` is also saved if missing.
+
+    Requires the filtered initial conditions ``ic_filt_nmesh{nmesh}.asdf`` in
+    ``lcv_dir`` (see ``abacusnbody.hod.zcv.ic_fields``).
 
     Parameters
     ----------
@@ -103,8 +108,10 @@ def main(path2config, alt_simname=None, save_3D_power=False):
         dk = np.log(k_bin_edges[1] / k_bin_edges[0])
     if n_k_bins == nmesh // 2:
         power_lin_fn = Path(save_dir) / f'power_lin_nmesh{nmesh:d}.asdf'
+        window_fn = Path(save_dir) / f'window_nmesh{nmesh:d}.npz'
     else:
         power_lin_fn = Path(save_dir) / f'power_lin_nmesh{nmesh:d}_dk{dk:.3f}.asdf'
+        window_fn = Path(save_dir) / f'window_nmesh{nmesh:d}_dk{dk:.3f}.npz'
 
     # load density field
     f = asdf.open(ic_fn)
@@ -170,6 +177,11 @@ def main(path2config, alt_simname=None, save_3D_power=False):
                 pk_lin_dict[f'P_ell_{keynames[i]}_{keynames[j]}'] = P['binned_poles']
                 pk_lin_dict[f'N_ell_{keynames[i]}_{keynames[j]}'] = P['N_mode_poles']
 
+    if save_3D_power:
+        # the 3D power spectra are saved individually above; don't overwrite the
+        # binned power spectra with an empty dictionary
+        return pk_lin_dict
+
     # record power spectra
     header = {}
     header['sim_name'] = sim_name
@@ -177,6 +189,16 @@ def main(path2config, alt_simname=None, save_3D_power=False):
     header['nmesh'] = nmesh
     header['kcut'] = kcut
     compress_asdf(str(power_lin_fn), pk_lin_dict, header)
+
+    # window function used to convolve the linear theory prediction (LCV)
+    if not os.path.exists(window_fn):
+        from .zenbu_window import periodic_window_function
+
+        print('Generating window function')
+        window, keff = periodic_window_function(
+            nmesh, Lbox, k_bin_edges, k_binc, k2weight=True
+        )
+        np.savez(window_fn, window=window, keff=keff)
     return pk_lin_dict
 
 

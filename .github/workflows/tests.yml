@@ -110,6 +110,12 @@ jobs:
       run: |
         pip install $(ls dist/*.whl)[test]
 
+    - name: Install pyrecon (optional, for reconstruction tests)
+      # not on PyPI; the reconstruction tests are skipped if this fails
+      continue-on-error: true
+      run: |
+        pip install -v git+https://github.com/cosmodesi/pyrecon@main
+
     - name: Test Python with pytest
       run: |
         # TODO: set up environment in tox

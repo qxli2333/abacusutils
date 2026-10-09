@@ -17,6 +17,7 @@ from .tsc import tsc_parallel
 __all__ = [
     'calc_pk_from_deltak',
     'calc_power',
+    'calc_xi_fft',
     'get_k_mu_edges',
     'pk_to_xi',
     'project_3d_to_poles',
@@ -1147,6 +1148,10 @@ def calc_power(
     squeeze_mu_axis=True,
     nthread=MAX_THREADS,
     dtype=np.float32,
+    pos_rand=None,
+    w_rand=None,
+    pos2_rand=None,
+    w2_rand=None,
 ):
     r"""
     Compute the 3D power spectrum given particle positions by first painting them on a
@@ -1194,6 +1199,17 @@ def calc_power(
         Number of numba threads to use
     dtype : np.dtype, optional
         Data type of the field
+    pos_rand : array_like, optional
+        reference catalog (e.g. randoms, or the shifted lattice/randoms of a
+        reconstruction), shape (M,3). If given, its overdensity is subtracted from
+        that of `pos`, i.e. the power spectrum of :math:`\delta_D - \delta_S` is
+        computed, as needed after reconstruction.
+    w_rand : array_like, optional
+        weights for `pos_rand`.
+    pos2_rand : array_like, optional
+        reference catalog for `pos2`, shape (M2,3).
+    w2_rand : array_like, optional
+        weights for `pos2_rand`.
 
     Returns
     -------
@@ -1238,6 +1254,10 @@ def calc_power(
     if pos2 is not None:
         meta['N_pos2'] = len(pos2)
         meta['is_weighted2'] = w2 is not None
+    if pos_rand is not None:
+        meta['N_rand'] = len(pos_rand)
+    if pos2_rand is not None:
+        meta['N_rand2'] = len(pos2_rand)
 
     # get the window function
     if compensated:
@@ -1258,6 +1278,19 @@ def calc_power(
         nthread=nthread,
         dtype=dtype,
     )
+    if pos_rand is not None:
+        field_fft -= get_field_fft(
+            pos_rand,
+            Lbox,
+            nmesh,
+            paste,
+            w_rand,
+            W,
+            compensated,
+            interlaced,
+            nthread=nthread,
+            dtype=dtype,
+        )
 
     # if second field provided
     if pos2 is not None:
@@ -1274,6 +1307,19 @@ def calc_power(
             nthread=nthread,
             dtype=dtype,
         )
+        if pos2_rand is not None:
+            field2_fft -= get_field_fft(
+                pos2_rand,
+                Lbox,
+                nmesh,
+                paste,
+                w2_rand,
+                W,
+                compensated,
+                interlaced,
+                nthread=nthread,
+                dtype=dtype,
+            )
     else:
         field2_fft = None
 
@@ -1318,3 +1364,94 @@ def calc_power(
     res = Table(res, meta=meta)
 
     return res
+
+
+def calc_xi_fft(
+    pos,
+    Lbox,
+    r_bins,
+    nmesh=128,
+    paste='TSC',
+    compensated=True,
+    interlaced=True,
+    poles=(0, 2, 4),
+    w=None,
+    pos_rand=None,
+    w_rand=None,
+    nthread=MAX_THREADS,
+    dtype=np.float32,
+):
+    r"""
+    Compute correlation function multipoles by painting particles on a mesh and
+    inverse Fourier transforming the 3D power spectrum (see :func:`pk_to_xi`).
+    Noisy on scales of a few mesh cells; cubic box only.
+
+    Parameters
+    ----------
+    pos : array_like
+        particle positions, shape (N,3).
+    Lbox : float
+        box size of the simulation.
+    r_bins : array_like
+        r separation bin edges.
+    nmesh : int, optional
+        size of the 3d array along each dimension. Default is 128.
+    paste : str, optional
+        particle pasting approach (CIC or TSC). Default is 'TSC'.
+    compensated : bool, optional
+        want to apply first-order compensated filter? Default is True.
+    interlaced : bool, optional
+        want to apply interlacing? Default is True.
+    poles : array_like, optional
+        Legendre multipoles. Default is (0, 2, 4).
+    w : array_like, optional
+        weights for each particle.
+    pos_rand : array_like, optional
+        reference catalog whose overdensity is subtracted (e.g. the shifted
+        lattice/randoms of a reconstruction), shape (M,3).
+    w_rand : array_like, optional
+        weights for `pos_rand`.
+    nthread : int, optional
+        Number of numba threads to use
+    dtype : np.dtype, optional
+        Data type of the field
+
+    Returns
+    -------
+    r_binc : array_like
+        r separation bin centers.
+    binned_poles : array_like
+        correlation function multipoles, shape (len(poles), len(r_binc)).
+    Npoles : array_like
+        number of modes per r bin.
+    """
+    W = get_W_compensated(Lbox, nmesh, paste, interlaced) if compensated else None
+    field_fft = get_field_fft(
+        pos,
+        Lbox,
+        nmesh,
+        paste,
+        w,
+        W,
+        compensated,
+        interlaced,
+        nthread=nthread,
+        dtype=dtype,
+    )
+    if pos_rand is not None:
+        field_fft -= get_field_fft(
+            pos_rand,
+            Lbox,
+            nmesh,
+            paste,
+            w_rand,
+            W,
+            compensated,
+            interlaced,
+            nthread=nthread,
+            dtype=dtype,
+        )
+    pk3d = np.asarray((field_fft * np.conj(field_fft)).real, dtype=dtype)
+    del field_fft
+    gc.collect()
+    return pk_to_xi(pk3d, Lbox, np.asarray(r_bins), poles=poles)

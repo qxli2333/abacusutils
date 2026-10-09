@@ -99,6 +99,27 @@ zcv_params:
     kcut: 0.2261946710584651  # k_Ny/2
     fields: ["1cb", "delta", "delta2", "tidal2", "nabla2"]
 
+lcv_params:
+    lcv_dir: "tests/data_zcv/"
+    ic_dir: "/global/cfs/projectdirs/desi/cosmosim/Abacus/ic/"
+    nmesh: 8
+    kcut: 0.2261946710584651  # k_Ny/2
+
+# Reconstruction (run after the HOD, before measuring clustering)
+recon_params:
+    want_recon: False
+    engine: 'pyrecon'
+    algorithm: 'IterativeFFTReconstruction'
+    convention: 'recsym'
+    smoothing_radius: 4.
+    nmesh: 16
+    bias: {LRG: 2.0, ELG: 1.2, QSO: 2.1}
+    f: null                 # null: f_growth of the simulation if want_rsd, else 0
+    los: 'z'
+    shifted_field: 'lattice'
+    lattice_nmesh: null
+    cv_type: 'lcv'
+
 power_params:
     nbins_k: 4 # nmesh/2
     nbins_mu: 1 # since we care only about poles TODO: maybe make skippable
