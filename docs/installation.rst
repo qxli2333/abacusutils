@@ -42,6 +42,15 @@ from GitHub with:
 The ``main`` branch is the OpenMP version; the default (``mpi``) branch also works but
 requires ``pmesh``.
 
+BAO fitting (``AbacusHOD.fit_bao``) requires `desilike <https://github.com/cosmodesi/desilike>`_
+and its dependencies (MPI, ``mpi4py``, `cosmoprimo <https://github.com/cosmodesi/cosmoprimo>`_,
+`lsstypes <https://github.com/adematti/lsstypes>`_, and ``iminuit`` for profiling), as well as
+`pyclass <https://github.com/adematti/pyclass>`_ for the default CLASS engine of the template:
+::
+
+    $ pip install mpi4py iminuit git+https://github.com/adematti/lsstypes git+https://github.com/cosmodesi/cosmoprimo git+https://github.com/cosmodesi/desilike
+    $ pip install git+https://github.com/adematti/pyclass
+
 Developers may wish to use:
     * ``abacusutils[test]``: packages required to run the tests
     * ``abacusutils[docs]``: to build the docs

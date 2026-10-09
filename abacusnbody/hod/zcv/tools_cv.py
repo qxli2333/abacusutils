@@ -65,6 +65,22 @@ def _along_k(x, spectra):
     return np.reshape(x, shape)
 
 
+def cv_variance_ratio(beta, var_tt, cov_tc, var_cc):
+    r"""
+    Variance of the control-variate-reduced estimator relative to the raw one,
+
+    .. math:: \frac{{\rm Var}(T - \beta C)}{{\rm Var}(T)} = 1 - 2\beta\frac{{\rm Cov}(T, C)}{{\rm Var}(T)} + \beta^2 \frac{{\rm Var}(C)}{{\rm Var}(T)},
+
+    in the disconnected (Gaussian) approximation used to compute :math:`\beta`.
+    Entries that cannot be computed are set to 1 (no reduction).
+    """
+    with np.errstate(divide='ignore', invalid='ignore'):
+        ratio = 1.0 - 2.0 * beta * cov_tc / var_tt + beta**2 * var_cc / var_tt
+    ratio = np.array(np.atleast_2d(ratio), dtype=float)
+    ratio[~np.isfinite(ratio)] = 1.0
+    return np.clip(ratio, 0.0, None)
+
+
 def combine_spectra(k, spectra, bias_params, rsd=False, numerical_nabla=False):
     """
     ZCV: Given some bias parameters, compute the model power spectra.
@@ -752,6 +768,9 @@ def run_zcv(power_rsd_tr_dict, power_rsd_ij_dict, power_tr_dict, power_ij_dict, 
     zcv_dict['Pk_tr_tr_ell_zcv'] = pk_nn_betasmooth
     zcv_dict['Pk_ZD_ZD_ell_ZeNBu'] = pk_zenbu
     zcv_dict['bias'] = bias_vec[1:]
+    zcv_dict['cv_variance_ratio'] = cv_variance_ratio(
+        beta_smooth, var_nn, cov_zn, var_zz
+    )
     return zcv_dict
 
 
@@ -930,6 +949,8 @@ def run_zcv_field(
     beta_smooth = np.zeros_like(beta_damp)
     for i in range(beta_smooth.shape[0]):
         beta_smooth[i, :] = savgol_filter(beta_damp.T[:, i], sg_window, 3)
+    # the monopole beta is applied to all 3D modes
+    variance_ratio = cv_variance_ratio(beta_smooth[0], var_nn, cov_zn, var_zz)
     beta_smooth = expand_poles_to_3d(k_binc, beta_smooth, nmesh, Lbox, np.array([0]))
 
     # get reduced fields
@@ -974,6 +995,7 @@ def run_zcv_field(
     zcv_dict['Pk_tr_tr_ell_zcv'] = pk_nn_betasmooth * Lbox**3
     zcv_dict['Pk_ZD_ZD_ell_ZeNBu'] = pk_zenbu * Lbox**3
     zcv_dict['bias'] = bias_vec[1:]
+    zcv_dict['cv_variance_ratio'] = variance_ratio
     return zcv_dict
 
 
@@ -1196,6 +1218,9 @@ def run_lcv(power_rsd_tr_dict, power_lin_dict, config):
     lcv_dict['Pk_tr_tr_ell_lcv'] = pk_tt_betasmooth
     lcv_dict['Pk_lf_lf_ell_CLASS'] = p_m_lin_input
     lcv_dict['bias'] = bias
+    lcv_dict['cv_variance_ratio'] = cv_variance_ratio(
+        beta_smooth, var_tt, cov_tl, var_ll
+    )
     return lcv_dict
 
 
@@ -1425,6 +1450,8 @@ def run_lcv_field(power_rsd_tr_fns, power_lin_fns, config):
             beta_smooth[i, :] = savgol_filter(beta_damp.T[:, i], sg_window, 3)
         except ValueError:
             warnings.warn('This message should only appear when doing a smoke test.')
+    # the monopole beta is applied to all 3D modes
+    variance_ratio = cv_variance_ratio(beta_smooth[0], var_tt, cov_lt, var_ll)
     beta_smooth = expand_poles_to_3d(k_binc, beta_smooth, nmesh, Lbox, np.array([0]))
 
     # cross-correlation coefficient
@@ -1477,4 +1504,5 @@ def run_lcv_field(power_rsd_tr_fns, power_lin_fns, config):
     lcv_dict['Pk_tr_tr_ell_lcv'] = pk_tt_betasmooth * Lbox**3
     lcv_dict['Pk_lf_lf_ell_CLASS'] = p_m_lin_input * Lbox**3
     lcv_dict['bias'] = bias
+    lcv_dict['cv_variance_ratio'] = variance_ratio
     return lcv_dict

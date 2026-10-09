@@ -2285,13 +2285,14 @@ class AbacusHOD:
             nmesh = config.get('lcv_params', config.get('zcv_params', {}))['nmesh']
         poles = power_params['poles']
         tr = next(iter(mock_dict))
-        if stat == 'pk':
+
+        def raw_power(nbins_k, k_max, logk):
             clustering = self.compute_power(
                 mock_dict,
-                power_params['nbins_k'],
-                power_params['nbins_mu'],
-                power_params['k_hMpc_max'],
-                power_params['logk'],
+                nbins_k,
+                1,
+                k_max,
+                logk,
                 poles=poles,
                 paste=power_params['paste'],
                 num_cells=nmesh,
@@ -2304,6 +2305,13 @@ class AbacusHOD:
                 'Pk_tr_tr_ell': np.asarray(clustering[f'{tr}_{tr}_ell']).T,
                 'Nk_tr_tr_ell': np.asarray(clustering[f'{tr}_{tr}_ell_modes']),
             }
+
+        if stat == 'pk':
+            return raw_power(
+                power_params['nbins_k'],
+                power_params['k_hMpc_max'],
+                power_params['logk'],
+            )
 
         pos = np.stack((mock_dict[tr]['x'], mock_dict[tr]['y'], mock_dict[tr]['z']), 1)
         pos_rand = _get_shifted_pos(mock_dict[tr])
@@ -2318,12 +2326,66 @@ class AbacusHOD:
             poles=poles,
             pos_rand=pos_rand,
         )
-        return {
-            'r_binc': r_binc,
-            'poles': poles,
-            'Xi_tr_tr_ell': xi_ell,
-            'Np_tr_tr_ell': Npoles,
-        }
+        # power spectrum multipoles up to the Nyquist frequency (e.g. for covariances)
+        xi_dict = raw_power(nmesh // 2, np.pi * nmesh / self.lbox, False)
+        xi_dict.update(
+            {'r_binc': r_binc, 'Xi_tr_tr_ell': xi_ell, 'Np_tr_tr_ell': Npoles}
+        )
+        return xi_dict
+
+    def fit_bao(self, mock_dict, config, cv_dict=None, bao_params=None):
+        r"""
+        Fit the BAO scale in the clustering of a (reconstructed) HOD catalog with
+        `desilike <https://github.com/cosmodesi/desilike>`_, following the DESI DR2 BAO
+        baseline by default; see :mod:`abacusnbody.hod.bao_fit`.
+
+        Parameters
+        ----------
+        ``mock_dict``: dict
+            output of ``run_hod`` or ``run_recon``, single tracer.
+
+        ``config``: dict
+            full configuration; the fit settings are read from ``config['bao_params']``
+            (see :data:`abacusnbody.hod.bao_fit.DEFAULT_BAO_PARAMS`).
+
+        ``cv_dict``: dict, optional
+            measurement to fit, output of ``apply_cv`` for ``bao_params['stat']``. If
+            ``None``, it is computed with ``apply_cv`` (``bao_params['cv_type']``; LCV
+            after reconstruction, ZCV before, by default).
+
+        ``bao_params``: dict, optional
+            fit settings, overriding ``config['bao_params']``.
+
+        Returns
+        -------
+        result: dict
+            best fit and errors of the BAO dilation parameters (e.g. ``'qiso'``,
+            ``'qiso_err'``, ``'qap'``, ``'qap_err'``), all parameters in ``'bestfit'``
+            and ``'error'``, ``'chi2'``, ``'ndof'``, and the fitted data, covariance and
+            model. See :func:`abacusnbody.hod.bao_fit.fit_bao`.
+        """
+        from .bao_fit import fit_bao, get_bao_params
+
+        if bao_params is None:
+            bao_params = config.get('bao_params')
+        params = get_bao_params(bao_params)
+        assert len(mock_dict.keys()) == 1, 'Currently implemented only a single tracer'
+        tr = next(iter(mock_dict))
+        if cv_dict is None:
+            cv_dict = self.apply_cv(
+                mock_dict, config, stat=params['stat'], cv_type=params['cv_type']
+            )
+        nbar = len(mock_dict[tr]['x']) / self.lbox**3
+        return fit_bao(
+            cv_dict,
+            z=self.z_mock,
+            Lbox=self.lbox,
+            nbar=nbar,
+            tracer=tr,
+            recon_info=mock_dict[tr].get('recon_info'),
+            sim_name=self.sim_name,
+            bao_params=params,
+        )
 
     def compute_wp(self, mock_dict, rpbins, pimax, pi_bin_size, Nthread=8):
         """

@@ -20,6 +20,10 @@ Fixes
 
 New Features
 ~~~~~~~~~~~~
+- HOD: BAO fits of the (reconstructed, control-variate-reduced) P(k) or xi(s) multipoles
+  with desilike, ``AbacusHOD.fit_bao``, following the DESI DR2 baseline by default, with
+  Gaussian periodic-box covariances that account for the control variate variance
+  reduction (``abacusnbody.hod.bao_fit``)
 - HOD: optional BAO reconstruction of the galaxy catalogs before measuring clustering,
   with ``AbacusHOD.run_recon`` (pyrecon by default; algorithm, convention, smoothing,
   mesh, bias, growth rate and the sampling of the shifted field are configurable via

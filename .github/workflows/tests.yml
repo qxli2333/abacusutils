@@ -116,6 +116,13 @@ jobs:
       run: |
         pip install -v git+https://github.com/cosmodesi/pyrecon@main
 
+    - name: Install desilike (optional, for BAO fitting tests)
+      # not on PyPI; the BAO fitting tests are skipped if this fails
+      continue-on-error: true
+      run: |
+        sudo apt-get install -y libopenmpi-dev
+        pip install -v mpi4py iminuit git+https://github.com/adematti/lsstypes git+https://github.com/cosmodesi/cosmoprimo git+https://github.com/cosmodesi/desilike
+
     - name: Test Python with pytest
       run: |
         # TODO: set up environment in tox

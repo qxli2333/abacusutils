@@ -145,6 +145,19 @@ power_params:
     logk: False
     nmesh: 576
 
+# BAO fits with desilike (AbacusHOD.fit_bao); defaults follow the DESI DR2 baseline
+bao_params:
+    stat: 'xi'                    # or 'pk'
+    data: 'cv'                    # control-variate-reduced measurement if available, or 'raw'
+    ells: [0, 2]
+    slim: [60., 150., 4.]         # Mpc/h
+    klim: [0.02, 0.3]             # h/Mpc
+    apmode: 'qisoqap'
+    fiducial: 'simulation'        # AbacusSummit cosmology of the simulation
+    covariance: 'gaussian'        # or path to a covariance file
+    cov_cv_reduction: True
+    method: 'profile'             # or 'emcee'
+
 # ===========================================================================================
 # The following dictionaries are for using the provided emcee/likelihood templates. They
 # are not needed for using the AbacusHOD class and running HODs.
