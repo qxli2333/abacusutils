@@ -121,7 +121,7 @@ jobs:
       continue-on-error: true
       run: |
         sudo apt-get install -y libopenmpi-dev
-        pip install -v mpi4py iminuit git+https://github.com/adematti/lsstypes git+https://github.com/cosmodesi/cosmoprimo git+https://github.com/cosmodesi/desilike
+        pip install -v mpi4py iminuit jax git+https://github.com/adematti/lsstypes git+https://github.com/cosmodesi/cosmoprimo git+https://github.com/cosmodesi/desilike
 
     - name: Test Python with pytest
       run: |

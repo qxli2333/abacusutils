@@ -539,6 +539,14 @@ def fit_bao(
     from desilike.likelihoods import ObservablesGaussianLikelihood
     from desilike.theories.galaxy_clustering import BAOPowerSpectrumTemplate
 
+    try:
+        import jax  # noqa: F401
+    except ImportError as e:
+        raise ImportError(
+            'BAO fitting requires jax, which desilike uses for the analytic '
+            'broadband and in its samplers: pip install jax'
+        ) from e
+
     params = get_bao_params(bao_params)
     stat, ells = params['stat'], params['ells']
     recon = recon_info is not None
