@@ -536,16 +536,15 @@ def fit_bao(
         and ``'ndof'``, the fitted data vector, covariance and best-fit model, and the
         desilike ``'profiles'`` or ``'chain'``.
     """
+    from desilike import jax as desilike_jax
     from desilike.likelihoods import ObservablesGaussianLikelihood
     from desilike.theories.galaxy_clustering import BAOPowerSpectrumTemplate
 
-    try:
-        import jax  # noqa: F401
-    except ImportError as e:
+    if desilike_jax.jax is None:
         raise ImportError(
-            'BAO fitting requires jax, which desilike uses for the analytic '
-            'broadband and in its samplers: pip install jax'
-        ) from e
+            'BAO fitting requires jax and interpax, which desilike uses for the '
+            'analytic broadband and in its samplers: pip install jax interpax'
+        )
 
     params = get_bao_params(bao_params)
     stat, ells = params['stat'], params['ells']

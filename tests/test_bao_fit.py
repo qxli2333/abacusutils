@@ -170,7 +170,10 @@ def test_gaussian_covariance_xi_poles():
 def bao_mock():
     """Noiseless BAO multipoles from the desilike model itself, with known dilations."""
     pytest.importorskip('desilike')
-    pytest.importorskip('jax')  # needed by desilike's broadband solve and samplers
+    from desilike import jax as desilike_jax
+
+    if desilike_jax.jax is None:  # needed for the broadband solve and samplers
+        pytest.skip('desilike jax backend (jax, interpax) not available')
     from cosmoprimo.fiducial import AbacusSummit
     from desilike.theories.galaxy_clustering import (
         BAOPowerSpectrumTemplate,

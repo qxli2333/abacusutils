@@ -44,12 +44,12 @@ requires ``pmesh``.
 
 BAO fitting (``AbacusHOD.fit_bao``) requires `desilike <https://github.com/cosmodesi/desilike>`_
 and its dependencies (MPI, ``mpi4py``, `cosmoprimo <https://github.com/cosmodesi/cosmoprimo>`_,
-`lsstypes <https://github.com/adematti/lsstypes>`_, ``iminuit`` for profiling, and ``jax``, which
-desilike needs for the analytic broadband and its samplers), as well as
+`lsstypes <https://github.com/adematti/lsstypes>`_, ``iminuit`` for profiling, and ``jax`` and
+``interpax``, which desilike needs for the analytic broadband and its samplers), as well as
 `pyclass <https://github.com/adematti/pyclass>`_ for the default CLASS engine of the template:
 ::
 
-    $ pip install mpi4py iminuit jax git+https://github.com/adematti/lsstypes git+https://github.com/cosmodesi/cosmoprimo git+https://github.com/cosmodesi/desilike
+    $ pip install mpi4py iminuit jax interpax git+https://github.com/adematti/lsstypes git+https://github.com/cosmodesi/cosmoprimo git+https://github.com/cosmodesi/desilike
     $ pip install git+https://github.com/adematti/pyclass
 
 Developers may wish to use:
