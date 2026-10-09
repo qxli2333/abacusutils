@@ -37,6 +37,7 @@ import numpy as np
 __all__ = [
     'DEFAULT_RECON_BIAS',
     'DEFAULT_RECON_PARAMS',
+    'DEFAULT_RECON_SMOOTHING_RADIUS',
     'get_recon_params',
     'make_lattice',
     'run_recon_pyrecon',
@@ -45,12 +46,15 @@ __all__ = [
 # fiducial linear biases used to estimate the displacement (DESI DR1 BAO choices)
 DEFAULT_RECON_BIAS = {'LRG': 2.0, 'ELG': 1.2, 'QSO': 2.1}
 
+# Gaussian smoothing radii in Mpc/h (DESI DR1/DR2 BAO choices)
+DEFAULT_RECON_SMOOTHING_RADIUS = {'LRG': 15.0, 'ELG': 15.0, 'QSO': 30.0}
+
 DEFAULT_RECON_PARAMS = {
     'want_recon': False,
     'engine': 'pyrecon',
     'algorithm': 'IterativeFFTReconstruction',
     'convention': 'recsym',
-    'smoothing_radius': 15.0,
+    'smoothing_radius': DEFAULT_RECON_SMOOTHING_RADIUS,
     'nmesh': 512,
     'cellsize': None,
     'bias': DEFAULT_RECON_BIAS,
@@ -124,21 +128,23 @@ def get_recon_params(recon_params=None):
         )
     if (params['nmesh'] is None) == (params['cellsize'] is None):
         raise ValueError('Specify exactly one of `nmesh` or `cellsize` for recon.')
-    if params['smoothing_radius'] <= 0:
+    radii = params['smoothing_radius']
+    radii = radii.values() if isinstance(radii, dict) else [radii]
+    if any(float(radius) <= 0 for radius in radii):
         raise ValueError('`smoothing_radius` must be positive.')
     return params
 
 
-def _get_bias(bias, tracer):
-    """Bias for this tracer, from a float or a per-tracer dict."""
-    if isinstance(bias, dict):
-        if tracer not in bias:
+def _get_per_tracer(value, tracer, name):
+    """Setting ``name`` for this tracer, from a float or a per-tracer dict."""
+    if isinstance(value, dict):
+        if tracer not in value:
             raise KeyError(
-                f'No reconstruction bias given for tracer {tracer!r}; '
-                f'add it to recon_params["bias"].'
+                f'No reconstruction {name} given for tracer {tracer!r}; '
+                f'add it to recon_params["{name}"].'
             )
-        return float(bias[tracer])
-    return float(bias)
+        return float(value[tracer])
+    return float(value)
 
 
 def _wrap_box(pos, Lbox, boxcenter=0.0):

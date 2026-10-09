@@ -20,10 +20,15 @@ Fixes
 
 New Features
 ~~~~~~~~~~~~
+- HOD: BAO fits of the (reconstructed, control-variate-reduced) P(k) or xi(s) multipoles
+  with desilike, ``AbacusHOD.fit_bao``, following the DESI DR2 baseline by default, with
+  Gaussian periodic-box covariances that account for the control variate variance
+  reduction (``abacusnbody.hod.bao_fit``)
 - HOD: optional BAO reconstruction of the galaxy catalogs before measuring clustering,
   with ``AbacusHOD.run_recon`` (pyrecon by default; algorithm, convention, smoothing,
   mesh, bias, growth rate and the sampling of the shifted field are configurable via
-  ``recon_params``)
+  ``recon_params``; the smoothing radius and bias can be set per tracer, with DESI
+  defaults of 15 Mpc/h for LRGs and ELGs and 30 Mpc/h for QSOs)
 - HOD: post-reconstruction P(k) and xi(s) multipoles with linear control variates
   (``AbacusHOD.apply_lcv``, ``apply_lcv_xi``), and ``AbacusHOD.apply_cv``, which defaults
   to LCV for reconstructed catalogs and ZCV otherwise

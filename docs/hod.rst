@@ -234,7 +234,7 @@ The settings go in a ``recon_params`` block of the config file; all keys are opt
         engine: 'pyrecon'
         algorithm: 'IterativeFFTReconstruction'   # or MultiGridReconstruction, IterativeFFTParticleReconstruction
         convention: 'recsym'                      # or 'reciso'
-        smoothing_radius: 15.                     # Mpc/h, Gaussian exp(-k^2 R^2 / 2)
+        smoothing_radius: {LRG: 15., ELG: 15., QSO: 30.}  # Mpc/h, Gaussian exp(-k^2 R^2 / 2); or a single float
         nmesh: 512                                # reconstruction mesh (or cellsize: 4.)
         bias: {LRG: 2.0, ELG: 1.2, QSO: 2.1}      # or a single float
         f: null                                   # null: simulation f_growth at z_mock if want_rsd, else 0
@@ -304,6 +304,63 @@ example of the full pipeline is given in ``scripts/hod/run_recon.py``. LCV curre
 requires ``want_rsd: True`` and a single tracer; ZCV is not available after
 reconstruction.
 
+BAO fitting
+-----------
+The BAO scale in the (reconstructed, variance-reduced) clustering can be fit with
+`desilike <https://github.com/cosmodesi/desilike>`_ (see :doc:`installation`), using
+``AbacusHOD.fit_bao`` or :func:`abacusnbody.hod.bao_fit.fit_bao`::
+
+    recon_dict = newBall.run_recon(mock_dict, config['recon_params'])
+    result = newBall.fit_bao(recon_dict, config)  # measures with apply_cv, then fits
+    print(result['qiso'], result['qiso_err'], result['qap'], result['qap_err'])
+
+The default settings follow the DESI DR2 BAO baseline: the template of
+`Chen et al. 2024 <https://arxiv.org/abs/2402.14070>`_ (desilike
+``DampedBAOWigglesTracer*Multipoles``), with the reconstruction convention and smoothing
+radius of the catalog; flat priors on :math:`\alpha_{\rm iso}, \alpha_{\rm AP}`, the bias,
+:math:`d\beta` and :math:`\Sigma_s`; Gaussian priors on the BAO damping
+:math:`(\Sigma_\parallel, \Sigma_\perp)` with widths (2, 1) Mpc/h and means (pre / post
+reconstruction, Mpc/h) BGS (10, 6.5) / (8, 3), LRG (9, 4.5) / (6, 3), ELG (8.5, 4.5) / (6, 3),
+QSO (9, 3.5) / (6, 3) (assuming the default 30 Mpc/h QSO smoothing radius);
+the correlation function monopole and quadrupole in :math:`60 < s < 150` Mpc/h with
+4 Mpc/h bins and the ``pcs2`` broadband, marginalized analytically. The settings go in
+a ``bao_params`` block; all keys are optional::
+
+    bao_params:
+        stat: 'xi'                    # or 'pk' (0.02 < k < 0.3 h/Mpc, 'pcs' broadband)
+        data: 'cv'                    # fit the control-variate-reduced measurement if available, or 'raw'
+        cv_type: 'default'            # passed to apply_cv: LCV after reconstruction, ZCV before
+        ells: [0, 2]
+        slim: [60., 150., 4.]         # Mpc/h
+        klim: [0.02, 0.3]             # h/Mpc
+        apmode: 'qisoqap'             # or 'qparqper', 'qiso'
+        fiducial: 'simulation'        # AbacusSummit cosmology of the simulation (alpha = 1 expected); or e.g. 'DESI'
+        engine: 'class'               # cosmoprimo engine for the template
+        broadband: null               # null: 'pcs2' for xi, 'pcs' for pk
+        sigma_priors: null            # null: DESI values for the tracer; or {sigmapar: [loc, scale], sigmaper: [loc, scale]}
+        covariance: 'gaussian'        # or path to a .npy/.txt covariance of the fitted data vector
+        cov_rescale: 1.
+        cov_cv_reduction: True        # scale the Gaussian covariance by the control variate variance reduction
+        method: 'profile'             # Minuit best fit and errors, or 'emcee' (posterior mean and std)
+
+The Gaussian covariance is that of the periodic box, computed from the measured power
+spectrum multipoles (including shot noise). For the correlation function, it sums
+exactly over the Fourier modes of the mesh; it assumes mesh cells smaller than the
+separation bins (e.g. ``nmesh = 576`` for a 2 Gpc/h box and 4 Mpc/h bins), and the
+reconstruction mesh should be similarly fine. When fitting measurements with control
+variates, the covariance is by default multiplied by the variance reduction
+:math:`{\rm Var}(T - \beta C) / {\rm Var}(T)` of the control variates for each
+multipole and wavenumber (``'cv_variance_ratio'`` in the output of ``apply_cv``).
+Validated against Gaussian random fields, it is accurate to ~1% for the power spectrum
+and ~10% for the correlation function. On nonlinear (e.g. Zel'dovich) fields, the
+correlation function :math:`\chi^2` can exceed the number of degrees of freedom while the
+BAO errors remain consistent with the power spectrum ones; for precision work and
+goodness-of-fit tests, provide a covariance file (e.g. from mocks).
+
+The broadband terms are linear in the model with a fixed design matrix: when profiling,
+they are solved for analytically at each step; when sampling, they are marginalized over
+analytically (flat priors) by projecting them out of the precision matrix.
+
 Light Cones
 -----------
 AbacusHOD supports generating HOD mock catalogs from halo light cone catalogs
@@ -343,5 +400,9 @@ API
    :show-inheritance:
 
 .. automodule:: abacusnbody.hod.recon
+   :members:
+   :show-inheritance:
+
+.. automodule:: abacusnbody.hod.bao_fit
    :members:
    :show-inheritance:
