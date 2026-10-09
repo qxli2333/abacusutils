@@ -89,3 +89,47 @@ def test_power(power_test_data, interlaced, compensated, paste):
         assert (
             more_diff / nbins_k < 0.035
         )  # less than 3.5% of entries differing by more than 1%
+
+
+@pytest.mark.parametrize('paste', ['CIC', 'TSC'])
+def test_power_reference_catalog(power_test_data, paste):
+    """Subtracting a reference catalog (randoms, or the shifted lattice of recon)."""
+    from abacusnbody.analysis.power_spectrum import calc_power
+    from abacusnbody.hod.recon import make_lattice
+
+    Lbox = power_test_data['Lbox']
+    pos = power_test_data['pos']
+    nmesh = 32
+    kw = {'kbins': 8, 'mubins': 1, 'nmesh': nmesh, 'paste': paste, 'poles': (0, 2)}
+
+    res = calc_power(pos, Lbox, **kw)
+    res_none = calc_power(pos, Lbox, pos_rand=None, **kw)
+    assert np.array_equal(res['poles'], res_none['poles'])
+    assert 'N_rand' not in res.meta
+
+    # same catalog as reference: delta_D - delta_S = 0
+    res_self = calc_power(pos, Lbox, pos_rand=pos, **kw)
+    assert np.allclose(res_self['power'], 0.0)
+    assert np.allclose(res_self['poles'], 0.0)
+    assert res_self.meta['N_rand'] == len(pos)
+
+    # an unshifted lattice matching the mesh paints to exactly zero overdensity
+    lattice = make_lattice(nmesh, Lbox, boxcenter=Lbox / 2, dtype=np.float32)
+    res_lat = calc_power(pos, Lbox, pos_rand=lattice, **kw)
+    assert np.allclose(res_lat['power'], res['power'], rtol=1e-4)
+
+
+def test_xi_fft(power_test_data):
+    from abacusnbody.analysis.power_spectrum import calc_xi_fft
+
+    Lbox = power_test_data['Lbox']
+    pos = power_test_data['pos']
+    r_bins = np.linspace(0.0, 150.0, 31)
+    r_binc, xi, Npoles = calc_xi_fft(pos, Lbox, r_bins, nmesh=32, poles=(0, 2))
+    assert np.allclose(r_binc, 0.5 * (r_bins[1:] + r_bins[:-1]))
+    assert xi.shape == (2, len(r_binc))
+    assert np.all(np.isfinite(xi[:, Npoles > 0]))
+
+    # same catalog as reference: zero correlation function
+    _, xi_self, _ = calc_xi_fft(pos, Lbox, r_bins, nmesh=32, poles=(0,), pos_rand=pos)
+    assert np.allclose(xi_self, 0.0)

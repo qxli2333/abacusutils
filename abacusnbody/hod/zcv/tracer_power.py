@@ -15,7 +15,8 @@ from abacusnbody.analysis.power_spectrum import (
 )
 from abacusnbody.metadata import get_meta
 
-from .ic_fields import compress_asdf
+from .ic_fields import compress_asdf, load_asdf_data
+from .tools_cv import _get_rec_settings
 
 try:
     from classy import Class
@@ -304,7 +305,8 @@ def get_recon_power(
     tracer_pos : array_like
         galaxy positions with shape (N, 3)
     random_pos : array_like
-        randoms positions with shape (M, 3)
+        positions of the shifted lattice/randoms with shape (M, 3); their
+        overdensity is subtracted from that of the tracers. Can be None.
     want_rsd : bool
         compute the power spectra in redshift space?
     config : str
@@ -314,6 +316,9 @@ def get_recon_power(
         Default is False.
     want_load_tr_fft : bool, optional
         want to load provided 3D Fourier tracer field? Default is False.
+        To limit memory use, call this function twice: first with the positions
+        and ``want_save=True`` (saves the Fourier tracer field and returns None),
+        then with ``want_load_tr_fft=True`` to compute the power spectra.
 
     Returns
     -------
@@ -329,7 +334,7 @@ def get_recon_power(
     config['lcv_params']['ic_dir']
     nmesh = config['lcv_params']['nmesh']
     kcut = config['lcv_params']['kcut']
-    rec_algo = config['HOD_params']['rec_algo']
+    rec_algo, _ = _get_rec_settings(config)
 
     # power params
     sim_name = config['sim_params']['sim_name']
@@ -377,8 +382,8 @@ def get_recon_power(
     # file to save to
     ic_fn = Path(save_dir) / f'ic_filt_nmesh{nmesh:d}.asdf'
     tr_field_fft_fn = (
-        Path(save_z_dir) / f'tr_field{rsd_str}_fft_nmesh{nmesh:d}.asdf'
-    )  # overwrites
+        Path(save_z_dir) / f'tr_field{rsd_str}_{rec_algo}_fft_nmesh{nmesh:d}.asdf'
+    )
     if not logk:
         dk = k_bin_edges[1] - k_bin_edges[0]
     else:
@@ -395,9 +400,9 @@ def get_recon_power(
 
     # create fft field for the tracer
     if want_load_tr_fft:
+        tr_field_fft = load_asdf_data(tr_field_fft_fn)
         tr_field_fft = (
-            asdf.open(tr_field_fft_fn)['data']['tr_field_fft_Re']
-            + 1j * asdf.open(tr_field_fft_fn)['data']['tr_field_fft_Im']
+            tr_field_fft['tr_field_fft_Re'] + 1j * tr_field_fft['tr_field_fft_Im']
         )
     else:
         w = None

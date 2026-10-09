@@ -289,6 +289,7 @@ class AbacusHOD:
         params['Lbox'] = header['BoxSize']  # Mpc / h, box size
         params['Mpart'] = header['ParticleMassHMsun']  # Msun / h, mass of each particle
         params['velz2kms'] = header['VelZSpace_to_kms'] / params['Lbox']
+        params['f_growth'] = header.get('f_growth')  # growth rate at z_mock
         if self.halo_lc:
             params['origin'] = np.array(header['LightConeOrigins']).reshape(-1, 3)[0]
         else:
@@ -1242,6 +1243,7 @@ class AbacusHOD:
             accessed with keys such as ``'LRG_LRG'``. Cross-correlations/spectra can be
             accessed with keys such as ``'LRG_ELG'``.
         """
+        _check_not_recon(mock_dict, 'compute_xirppi')
         clustering = {}
         for i1, tr1 in enumerate(mock_dict.keys()):
             x1 = mock_dict[tr1]['x']
@@ -1277,6 +1279,7 @@ class AbacusHOD:
     def compute_multipole(
         self, mock_dict, rpbins, pimax, sbins, nbins_mu, orders=(0, 2), Nthread=8
     ):
+        _check_not_recon(mock_dict, 'compute_multipole')
         clustering = {}
         for i1, tr1 in enumerate(mock_dict.keys()):
             x1 = mock_dict[tr1]['x']
@@ -1352,7 +1355,9 @@ class AbacusHOD:
         Parameters
         ----------
         ``mock_dict``: dict
-            dictionary of tracer positions. Output of ``run_hod``.
+            dictionary of tracer positions. Output of ``run_hod``, or of ``run_recon``,
+            in which case the power spectrum of :math:`\delta_D - \delta_S` (reconstructed
+            galaxies minus shifted lattice/randoms) is computed.
 
         ``nbins_k``: int
             number of k bin centers (same convention as other correlation functions).
@@ -1403,6 +1408,7 @@ class AbacusHOD:
             z1 = mock_dict[tr1]['z']
             pos1 = np.stack((x1, y1, z1), axis=1)
             w1 = mock_dict[tr1].get('w', None)
+            pos1_rand = _get_shifted_pos(mock_dict[tr1])
             for i2, tr2 in enumerate(mock_dict.keys()):
                 if i1 > i2:
                     continue  # cross-correlations are symmetric
@@ -1421,6 +1427,7 @@ class AbacusHOD:
                         interlaced,
                         w=w1,
                         poles=poles,
+                        pos_rand=pos1_rand,
                     )
                     clustering[tr1 + '_' + tr2] = power['power']
                     clustering[tr1 + '_' + tr2 + '_modes'] = power['N_mode']
@@ -1433,6 +1440,7 @@ class AbacusHOD:
                     z2 = mock_dict[tr2]['z']
                     pos2 = np.stack((x2, y2, z2), axis=1)
                     w2 = mock_dict[tr2].get('w', None)
+                    pos2_rand = _get_shifted_pos(mock_dict[tr2])
                     power = calc_power(
                         pos1,
                         Lbox,
@@ -1448,6 +1456,8 @@ class AbacusHOD:
                         pos2=pos2,
                         w2=w2,
                         poles=poles,
+                        pos_rand=pos1_rand,
+                        pos2_rand=pos2_rand,
                     )
                     clustering[tr1 + '_' + tr2] = power['power']
                     clustering[tr1 + '_' + tr2 + '_modes'] = power['N_mode']
@@ -1819,6 +1829,502 @@ class AbacusHOD:
 
         return zcv_dict
 
+    def _get_f_growth(self):
+        """Linear growth rate at ``z_mock``, from the simulation header or metadata."""
+        f = getattr(self, 'params', {}).get('f_growth')
+        if f is None:
+            from abacusnbody.metadata import get_meta
+
+            f = get_meta(self.sim_name, redshift=self.z_mock)['f_growth']
+        return float(f)
+
+    def run_recon(self, mock_dict, recon_params=None, want_rsd=None, Nthread=16):
+        r"""
+        Run BAO reconstruction on the HOD galaxies (after ``run_hod``, before
+        measuring clustering). Each tracer is reconstructed independently, with
+        `pyrecon <https://github.com/cosmodesi/pyrecon>`_ by default.
+
+        The reconstructed field is :math:`\delta_D - \delta_S`: the galaxies shifted
+        by the estimated displacement, minus an initially uniform field (a regular
+        lattice by default) shifted by the same displacement (RecSym) or by its
+        real-space part only (RecIso). See :mod:`abacusnbody.hod.recon`.
+
+        Parameters
+        ----------
+        ``mock_dict``: dict
+            dictionary of tracer positions. Output of ``run_hod``.
+
+        ``recon_params``: dict
+            reconstruction settings (``recon_params`` block of the config file).
+            Missing keys take the defaults in
+            :data:`abacusnbody.hod.recon.DEFAULT_RECON_PARAMS`:
+
+                * ``engine``: str, ``'pyrecon'``.
+                * ``algorithm``: str, ``'IterativeFFTReconstruction'`` (default),
+                  ``'MultiGridReconstruction'`` or ``'IterativeFFTParticleReconstruction'``.
+                * ``convention``: str, ``'recsym'`` (default) or ``'reciso'``.
+                * ``smoothing_radius``: float, Gaussian smoothing in Mpc/h, default 15.
+                * ``nmesh`` or ``cellsize``: reconstruction mesh, default ``nmesh=512``.
+                * ``bias``: float or per-tracer dict, default ``{LRG: 2.0, ELG: 1.2, QSO: 2.1}``.
+                * ``f``: float, growth rate; default ``None`` uses the simulation
+                  ``f_growth`` at ``z_mock`` if ``want_rsd``, else 0.
+                * ``los``: str, line of sight, default ``'z'``.
+                * ``shifted_field``: str, ``'lattice'`` (default) or ``'randoms'``.
+                * ``lattice_nmesh``: int, lattice points per side, default ``nmesh``.
+                  Set it to the power spectrum mesh size.
+                * ``nrandoms_factor``, ``random_seed``: used if ``shifted_field == 'randoms'``.
+                * ``recon_kwargs``, ``density_kwargs``, ``run_kwargs``: dict, passed to the
+                  pyrecon constructor, ``set_density_contrast`` and ``run``.
+
+        ``want_rsd``: bool
+            whether ``mock_dict`` is in redshift space. Default ``self.want_rsd``.
+
+        ``Nthread``: int
+            number of threads. Default 16.
+
+        Returns
+        -------
+        recon_dict: dict
+            same structure as ``mock_dict``, with ``'x'``, ``'y'``, ``'z'`` replaced by the
+            reconstructed positions (in Mpc/h, in [-Lbox/2, Lbox/2)), plus the keys
+            ``'shifted'`` (dict with the ``'x'``, ``'y'``, ``'z'`` of the shifted
+            lattice/randoms) and ``'recon_info'`` (settings used) for each tracer.
+            ``compute_power`` and ``apply_cv`` accept it in place of ``mock_dict``.
+        """
+        from .recon import _get_bias, get_recon_params, run_recon_pyrecon
+
+        if self.halo_lc:
+            raise NotImplementedError(
+                'Reconstruction is currently implemented only for periodic boxes.'
+            )
+        params = get_recon_params(recon_params)
+        if want_rsd is None:
+            want_rsd = self.want_rsd
+        if params['f'] is not None:
+            f = float(params['f'])
+        elif want_rsd:
+            f = self._get_f_growth()
+        else:
+            f = 0.0
+
+        recon_dict = {}
+        for tr in mock_dict:
+            start = time.time()
+            bias = _get_bias(params['bias'], tr)
+            pos = np.stack(
+                (mock_dict[tr]['x'], mock_dict[tr]['y'], mock_dict[tr]['z']), axis=1
+            )
+            pos_rec, pos_shifted = run_recon_pyrecon(
+                pos,
+                self.lbox,
+                f,
+                bias,
+                algorithm=params['algorithm'],
+                convention=params['convention'],
+                smoothing_radius=params['smoothing_radius'],
+                nmesh=params['nmesh'],
+                cellsize=params['cellsize'],
+                los=params['los'],
+                shifted_field=params['shifted_field'],
+                lattice_nmesh=params['lattice_nmesh'],
+                nrandoms_factor=params['nrandoms_factor'],
+                seed=params['random_seed'],
+                nthread=Nthread,
+                recon_kwargs=params['recon_kwargs'],
+                density_kwargs=params['density_kwargs'],
+                run_kwargs=params['run_kwargs'],
+            )
+            del pos
+
+            recon_dict[tr] = {
+                key: val
+                for key, val in mock_dict[tr].items()
+                if key not in ('x', 'y', 'z')
+            }
+            for i, ax in enumerate('xyz'):
+                recon_dict[tr][ax] = np.ascontiguousarray(pos_rec[:, i])
+            del pos_rec
+            recon_dict[tr]['shifted'] = {
+                ax: np.ascontiguousarray(pos_shifted[:, i])
+                for i, ax in enumerate('xyz')
+            }
+            del pos_shifted
+            recon_dict[tr]['recon_info'] = {
+                'engine': params['engine'],
+                'algorithm': params['algorithm'],
+                'convention': params['convention'],
+                'smoothing_radius': params['smoothing_radius'],
+                'nmesh': params['nmesh'],
+                'cellsize': params['cellsize'],
+                'los': params['los'],
+                'shifted_field': params['shifted_field'],
+                'lattice_nmesh': params['lattice_nmesh'],
+                'f': f,
+                'bias': bias,
+                'want_rsd': want_rsd,
+                'cv_type': params['cv_type'],
+            }
+            self.logger.info(
+                f'Reconstruction of {tr} done in elapsed time {time.time() - start:.2f} s.'
+            )
+        return recon_dict
+
+    def _setup_lcv(self, recon_dict, config):
+        """
+        Check the inputs to LCV and return a config whose reconstruction settings
+        (convention, smoothing radius, RSD) are those actually used in ``recon_dict``.
+        """
+        assert _is_recon(recon_dict), (
+            'LCV is implemented for reconstructed catalogs; run `run_recon` first.'
+        )
+        assert len(recon_dict.keys()) == 1, 'Currently implemented only a single tracer'
+        assert len(config['power_params']['poles']) <= 3, (
+            'Currently implemented only multipoles 0, 2, 4'
+        )
+        assert config['power_params']['nbins_mu'] == 1, (
+            'Currently wedges are not implemented'
+        )
+        if 'nmesh' not in config['power_params']:
+            config['power_params']['nmesh'] = config['lcv_params']['nmesh']
+        assert config['lcv_params']['nmesh'] == config['power_params']['nmesh'], (
+            '`nmesh` in `power_params` and `lcv_params` should match.'
+        )
+
+        info = next(iter(recon_dict.values()))['recon_info']
+        assert info['want_rsd'], 'Currently LCV with want_rsd=False not implemented'
+        config = dict(config)
+        config['HOD_params'] = {**config['HOD_params'], 'want_rsd': info['want_rsd']}
+        config['recon_params'] = {
+            **(config.get('recon_params') or {}),
+            'convention': info['convention'],
+            'smoothing_radius': info['smoothing_radius'],
+        }
+        return config
+
+    def _recon_pos_ic_frame(self, tracer_dict):
+        """Positions in [0, Lbox), aligned with the initial conditions grid."""
+        pos = np.stack(
+            (tracer_dict['x'], tracer_dict['y'], tracer_dict['z']), axis=1
+        ).astype(np.float32)
+        pos += np.float32(self.lbox / 2.0)
+        pos %= np.float32(self.lbox)
+        return pos
+
+    def apply_lcv(self, recon_dict, config, load_presaved=False):
+        r"""
+        Apply linear control variates (LCV) to the power spectrum multipoles of a
+        reconstructed catalog (output of ``run_recon``).
+
+        The control variate is the initial conditions field evolved with the linear
+        post-reconstruction model, :math:`D(b + f\mu^2)\delta_L` (RecSym) or
+        :math:`D(b + f(1-\mathcal{S})\mu^2)\delta_L` (RecIso), whose mean is known
+        analytically from linear theory. Requires the ``lcv_params`` block and the
+        presaved files from ``abacusnbody.hod.zcv.ic_fields`` and
+        ``abacusnbody.hod.zcv.linear_fields``.
+
+        Returns
+        -------
+        lcv_dict: dict
+            raw (``'Pk_tr_tr_ell'``) and LCV-reduced (``'Pk_tr_tr_ell_lcv'``) multipoles,
+            plus ``'k_binc'``, ``'rho_tr_lf'``, ``'bias'`` and the model spectra.
+        """
+        # LCV module has optional dependencies, don't import unless necessary
+        from ..analysis.power_spectrum import get_k_mu_edges
+        from .zcv.ic_fields import load_asdf_data, load_asdf_header
+        from .zcv.tools_cv import _get_rec_settings, run_lcv
+        from .zcv.tracer_power import get_recon_power
+
+        config = self._setup_lcv(recon_dict, config)
+        rec_algo, _ = _get_rec_settings(config)
+        want_rsd = config['HOD_params']['want_rsd']
+        nmesh = config['lcv_params']['nmesh']
+
+        # file names
+        save_dir = (
+            Path(config['lcv_params']['lcv_dir']) / config['sim_params']['sim_name']
+        )
+        save_z_dir = save_dir / f'z{config["sim_params"]["z_mock"]:.3f}'
+        rsd_str = '_rsd' if want_rsd else ''
+        k_bin_edges, _mu_bin_edges = get_k_mu_edges(
+            self.lbox,
+            config['power_params']['k_hMpc_max'],
+            config['power_params']['nbins_k'],
+            config['power_params']['nbins_mu'],
+            config['power_params']['logk'],
+        )
+        k_binc = 0.5 * (k_bin_edges[1:] + k_bin_edges[:-1])
+        if not config['power_params']['logk']:
+            dk = k_bin_edges[1] - k_bin_edges[0]
+        else:
+            dk = np.log(k_bin_edges[1] / k_bin_edges[0])
+        if config['power_params']['nbins_k'] == nmesh // 2:
+            dk_str = ''
+        else:
+            dk_str = f'_dk{dk:.3f}'
+        power_rsd_tr_fn = (
+            save_z_dir / f'power{rsd_str}_tr_{rec_algo}_lin_nmesh{nmesh:d}{dk_str}.asdf'
+        )
+        power_lin_fn = save_dir / f'power_lin_nmesh{nmesh:d}{dk_str}.asdf'
+
+        if load_presaved:
+            pk_rsd_tr_dict = load_asdf_data(power_rsd_tr_fn)
+        else:
+            tr = next(iter(recon_dict))
+            # first pass: paint delta_D - delta_S and save its Fourier transform
+            get_recon_power(
+                self._recon_pos_ic_frame(recon_dict[tr]),
+                self._recon_pos_ic_frame(recon_dict[tr]['shifted']),
+                want_rsd,
+                config,
+                want_save=True,
+            )
+            gc.collect()
+            # second pass: cross-correlate with the linear fields delta, delta mu^2
+            pk_rsd_tr_dict = get_recon_power(
+                None, None, want_rsd, config, want_save=True, want_load_tr_fft=True
+            )
+        assert np.allclose(k_binc, pk_rsd_tr_dict['k_binc']), (
+            f'Mismatching file: {power_rsd_tr_fn!s}'
+        )
+
+        pk_lin_dict = load_asdf_data(power_lin_fn)
+        assert np.allclose(k_binc, pk_lin_dict['k_binc']), (
+            f'Mismatching file: {power_lin_fn!s}'
+        )
+        assert np.isclose(
+            load_asdf_header(power_lin_fn)['kcut'], config['lcv_params']['kcut']
+        ), f'Mismatching file: {power_lin_fn!s}'
+
+        return run_lcv(pk_rsd_tr_dict, pk_lin_dict, config)
+
+    def apply_lcv_xi(self, recon_dict, config, load_presaved=False):
+        r"""
+        Apply linear control variates (LCV) to the correlation function multipoles
+        of a reconstructed catalog (output of ``run_recon``).
+
+        The LCV is applied to the 3D power spectrum, which is then inverse Fourier
+        transformed into :math:`\xi_\ell(s)`, as in ``apply_zcv_xi``. Requires the
+        3D linear spectra saved by ``abacusnbody.hod.zcv.linear_fields --save_3D_power``.
+
+        Returns
+        -------
+        lcv_dict: dict
+            raw (``'Xi_tr_tr_ell'``) and LCV-reduced (``'Xi_tr_tr_ell_lcv'``) correlation
+            function multipoles at ``'r_binc'``, plus the power spectrum outputs of
+            ``run_lcv_field``.
+        """
+        # LCV module has optional dependencies, don't import unless necessary
+        from ..analysis.power_spectrum import pk_to_xi
+        from .zcv.ic_fields import load_asdf_data, load_asdf_header
+        from .zcv.tools_cv import _get_rec_settings, run_lcv_field
+        from .zcv.tracer_power import get_recon_power
+
+        config = self._setup_lcv(recon_dict, config)
+        rec_algo, _ = _get_rec_settings(config)
+        want_rsd = config['HOD_params']['want_rsd']
+        nmesh = config['lcv_params']['nmesh']
+
+        # file names
+        save_dir = (
+            Path(config['lcv_params']['lcv_dir']) / config['sim_params']['sim_name']
+        )
+        save_z_dir = save_dir / f'z{config["sim_params"]["z_mock"]:.3f}'
+        rsd_str = '_rsd' if want_rsd else ''
+        keynames = ['delta', 'deltamu2']
+        pk_rsd_tr_fns = [
+            save_z_dir / f'power{rsd_str}_tr_tr_{rec_algo}_lin_nmesh{nmesh:d}.asdf'
+        ]
+        for key in keynames:
+            pk_rsd_tr_fns.append(
+                save_z_dir
+                / f'power{rsd_str}_{key}_tr_{rec_algo}_lin_nmesh{nmesh:d}.asdf'
+            )
+        pk_lin_fns = []
+        for i in range(len(keynames)):
+            for j in range(len(keynames)):
+                if i < j:
+                    continue
+                pk_lin_fns.append(
+                    save_z_dir
+                    / f'power_{keynames[i]}_{keynames[j]}_lin_nmesh{nmesh:d}.asdf'
+                )
+
+        if not load_presaved:
+            tr = next(iter(recon_dict))
+            # first pass: paint delta_D - delta_S and save its Fourier transform
+            get_recon_power(
+                self._recon_pos_ic_frame(recon_dict[tr]),
+                self._recon_pos_ic_frame(recon_dict[tr]['shifted']),
+                want_rsd,
+                config,
+                want_save=True,
+                save_3D_power=True,
+            )
+            gc.collect()
+            # second pass: 3D cross-power with the linear fields delta, delta mu^2
+            pk_rsd_tr_fns = get_recon_power(
+                None,
+                None,
+                want_rsd,
+                config,
+                want_save=True,
+                save_3D_power=True,
+                want_load_tr_fft=True,
+            )
+        for fn in pk_rsd_tr_fns + pk_lin_fns:
+            assert np.isclose(
+                load_asdf_header(fn)['kcut'], config['lcv_params']['kcut']
+            ), f'Mismatching file: {fn!s}'
+
+        lcv_dict = run_lcv_field(pk_rsd_tr_fns, pk_lin_fns, config)
+
+        # convert 3d power spectrum to correlation function multipoles
+        r_bins = np.linspace(0.0, 200.0, 201)
+        power_cv_tr_fn = (
+            save_z_dir / f'power{rsd_str}_LCV_tr_{rec_algo}_nmesh{nmesh:d}.asdf'
+        )
+        poles = config['power_params']['poles']
+        r_binc, binned_poles_lcv, Npoles = pk_to_xi(
+            load_asdf_data(power_cv_tr_fn)['P_k3D_tr_tr_lcv'],
+            self.lbox,
+            r_bins,
+            poles=poles,
+        )
+        r_binc, binned_poles, Npoles = pk_to_xi(
+            load_asdf_data(pk_rsd_tr_fns[0])['P_k3D_tr_tr'],
+            self.lbox,
+            r_bins,
+            poles=poles,
+        )
+        lcv_dict['Xi_tr_tr_ell_lcv'] = binned_poles_lcv
+        lcv_dict['Xi_tr_tr_ell'] = binned_poles
+        lcv_dict['Np_tr_tr_ell'] = Npoles
+        lcv_dict['r_binc'] = r_binc
+        return lcv_dict
+
+    def apply_cv(
+        self, mock_dict, config, stat='pk', cv_type='default', load_presaved=False
+    ):
+        r"""
+        Measure the power spectrum (``stat='pk'``) or correlation function
+        (``stat='xi'``) multipoles with control variates.
+
+        The default control variate depends on the catalog: linear CV (LCV) for
+        reconstructed catalogs (output of ``run_recon``; can be changed with
+        ``recon_params['cv_type']``), Zel'dovich CV (ZCV) otherwise.
+
+        Parameters
+        ----------
+        ``mock_dict``: dict
+            output of ``run_hod`` or ``run_recon``.
+
+        ``config``: dict
+            full configuration (``sim_params``, ``HOD_params``, ``power_params`` and
+            ``zcv_params``/``lcv_params``/``recon_params`` as needed).
+
+        ``stat``: str
+            ``'pk'`` for :math:`P_\ell(k)`, ``'xi'`` for :math:`\xi_\ell(s)`.
+
+        ``cv_type``: str or None
+            ``'default'``, ``'lcv'``, ``'zcv'``, or ``None`` for the raw measurement
+            only (computed from ``power_params``; :math:`\xi_\ell(s)` via FFT).
+
+        ``load_presaved``: bool
+            reuse the last saved tracer power spectra.
+
+        Returns
+        -------
+        cv_dict: dict
+            output of ``apply_lcv``, ``apply_lcv_xi``, ``apply_zcv`` or ``apply_zcv_xi``;
+            for ``cv_type=None``, the raw multipoles ``'Pk_tr_tr_ell'`` at ``'k_binc'``
+            or ``'Xi_tr_tr_ell'`` at ``'r_binc'``.
+        """
+        if stat not in ('pk', 'xi'):
+            raise ValueError(f"stat should be 'pk' or 'xi', not {stat!r}")
+        is_recon = _is_recon(mock_dict)
+        if cv_type == 'default':
+            if is_recon:
+                info = next(iter(mock_dict.values()))['recon_info']
+                cv_type = (config.get('recon_params') or {}).get(
+                    'cv_type', info.get('cv_type', 'lcv')
+                )
+            else:
+                cv_type = 'zcv'
+
+        if cv_type is None:
+            return self._compute_raw_poles(mock_dict, config, stat)
+        if cv_type == 'lcv':
+            if not is_recon:
+                raise NotImplementedError(
+                    'LCV is currently implemented only for reconstructed catalogs '
+                    '(output of `run_recon`).'
+                )
+            if stat == 'pk':
+                return self.apply_lcv(mock_dict, config, load_presaved=load_presaved)
+            return self.apply_lcv_xi(mock_dict, config, load_presaved=load_presaved)
+        if cv_type == 'zcv':
+            if is_recon:
+                raise NotImplementedError(
+                    'ZCV is not implemented for reconstructed catalogs: the advected '
+                    'Zeldovich fields are not shifted by the reconstruction '
+                    "displacement. Use cv_type='lcv'."
+                )
+            if stat == 'pk':
+                return self.apply_zcv(mock_dict, config, load_presaved=load_presaved)
+            return self.apply_zcv_xi(mock_dict, config, load_presaved=load_presaved)
+        raise ValueError(f"Unknown cv_type {cv_type!r}; use 'lcv', 'zcv' or None")
+
+    def _compute_raw_poles(self, mock_dict, config, stat):
+        """Raw auto-correlation multipoles (no control variates), single tracer."""
+        from ..analysis.power_spectrum import calc_xi_fft
+
+        assert len(mock_dict.keys()) == 1, 'Currently implemented only a single tracer'
+        power_params = config['power_params']
+        nmesh = power_params.get('nmesh')
+        if nmesh is None:
+            nmesh = config.get('lcv_params', config.get('zcv_params', {}))['nmesh']
+        poles = power_params['poles']
+        tr = next(iter(mock_dict))
+        if stat == 'pk':
+            clustering = self.compute_power(
+                mock_dict,
+                power_params['nbins_k'],
+                power_params['nbins_mu'],
+                power_params['k_hMpc_max'],
+                power_params['logk'],
+                poles=poles,
+                paste=power_params['paste'],
+                num_cells=nmesh,
+                compensated=power_params['compensated'],
+                interlaced=power_params['interlaced'],
+            )
+            return {
+                'k_binc': clustering['k_binc'],
+                'poles': poles,
+                'Pk_tr_tr_ell': np.asarray(clustering[f'{tr}_{tr}_ell']).T,
+                'Nk_tr_tr_ell': np.asarray(clustering[f'{tr}_{tr}_ell_modes']),
+            }
+
+        pos = np.stack((mock_dict[tr]['x'], mock_dict[tr]['y'], mock_dict[tr]['z']), 1)
+        pos_rand = _get_shifted_pos(mock_dict[tr])
+        r_binc, xi_ell, Npoles = calc_xi_fft(
+            pos,
+            self.lbox,
+            np.linspace(0.0, 200.0, 201),
+            nmesh=nmesh,
+            paste=power_params['paste'],
+            compensated=power_params['compensated'],
+            interlaced=power_params['interlaced'],
+            poles=poles,
+            pos_rand=pos_rand,
+        )
+        return {
+            'r_binc': r_binc,
+            'poles': poles,
+            'Xi_tr_tr_ell': xi_ell,
+            'Np_tr_tr_ell': Npoles,
+        }
+
     def compute_wp(self, mock_dict, rpbins, pimax, pi_bin_size, Nthread=8):
         """
         Computes :math:`w_p`.
@@ -1847,6 +2353,7 @@ class AbacusHOD:
             accessed with keys such as ``'LRG_LRG'``. Cross-correlations/spectra can be
             accessed with keys such as ``'LRG_ELG'``.
         """
+        _check_not_recon(mock_dict, 'compute_wp')
         clustering = {}
         for i1, tr1 in enumerate(mock_dict.keys()):
             x1 = mock_dict[tr1]['x']
@@ -1944,6 +2451,28 @@ class AbacusHOD:
         for tracer in tracers:
             mockdict[tracer] = ascii.read(outdir / (tracer + 's.dat'))
         return mockdict
+
+
+def _is_recon(mock_dict):
+    """Whether ``mock_dict`` is a reconstructed catalog (output of ``run_recon``)."""
+    return any('shifted' in mock_dict[tr] for tr in mock_dict)
+
+
+def _get_shifted_pos(tracer_dict):
+    """Positions of the shifted lattice/randoms of a reconstructed tracer, or None."""
+    shifted = tracer_dict.get('shifted')
+    if shifted is None:
+        return None
+    return np.stack((shifted['x'], shifted['y'], shifted['z']), axis=1)
+
+
+def _check_not_recon(mock_dict, name):
+    """Pair-count estimators below do not subtract the shifted field delta_S."""
+    if _is_recon(mock_dict):
+        raise ValueError(
+            f'`{name}` does not support reconstructed catalogs, since it ignores the '
+            'shifted field delta_S. Use `compute_power` or `apply_cv` instead.'
+        )
 
 
 @njit(parallel=True)

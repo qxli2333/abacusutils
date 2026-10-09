@@ -210,6 +210,100 @@ redshift-space 2PCF (:math:`\xi(r_p, \pi)`): ::
     mock_dict = newBall.run_hod(newBall.tracers, want_rsd, write_to_disk=write_to_disk)
     xirppi = newBall.compute_xirppi(mock_dict, rpbins, pimax, pi_bin_size)
 
+Reconstruction
+--------------
+After the HOD and before measuring clustering, the galaxy catalog can be passed
+through standard (Zel'dovich) BAO reconstruction with ``run_recon``. The reconstruction
+uses `pyrecon <https://github.com/cosmodesi/pyrecon>`_ by default, which must be
+installed separately (see :doc:`installation`). Each tracer is reconstructed
+independently, in the periodic box, with the line of sight along :math:`z`.
+
+The reconstructed field is :math:`\delta_{\rm rec} = \delta_D - \delta_S`, where
+:math:`\delta_D` is the field of the galaxies shifted by the estimated displacement and
+:math:`\delta_S` is the field of an initially uniform distribution shifted by the same
+displacement (RecSym) or by its real-space part only (RecIso). The shifted field is
+needed even in a periodic box: without it the large-scale amplitude is
+:math:`\sim(b-1)\delta_L` rather than :math:`b\,\delta_L`. Since the unshifted
+distribution is exactly uniform, :math:`\delta_S` is sampled with a regular lattice by
+default (no shot noise); random points can be used instead.
+
+The settings go in a ``recon_params`` block of the config file; all keys are optional::
+
+    recon_params:
+        want_recon: True                          # used by scripts/hod/run_recon.py
+        engine: 'pyrecon'
+        algorithm: 'IterativeFFTReconstruction'   # or MultiGridReconstruction, IterativeFFTParticleReconstruction
+        convention: 'recsym'                      # or 'reciso'
+        smoothing_radius: 15.                     # Mpc/h, Gaussian exp(-k^2 R^2 / 2)
+        nmesh: 512                                # reconstruction mesh (or cellsize: 4.)
+        bias: {LRG: 2.0, ELG: 1.2, QSO: 2.1}      # or a single float
+        f: null                                   # null: simulation f_growth at z_mock if want_rsd, else 0
+        los: 'z'
+        shifted_field: 'lattice'                  # or 'randoms'
+        lattice_nmesh: null                       # null: nmesh; best set to the power spectrum mesh
+        nrandoms_factor: 10                       # only for shifted_field: 'randoms'
+        random_seed: 42                           # only for shifted_field: 'randoms'
+        recon_kwargs: {}                          # passed to the pyrecon constructor, e.g. {fft_engine: 'fftw'}
+        density_kwargs: {}                        # passed to set_density_contrast
+        run_kwargs: {}                            # passed to run, e.g. {niterations: 3}
+        cv_type: 'lcv'                            # default control variates for post-recon clustering
+
+The bias is the fiducial bias used to estimate the displacement, as in the
+reconstruction of the data; it is fixed rather than fit to each HOD. The output of
+``run_recon`` has the same structure as that of ``run_hod``, with the reconstructed
+positions and two extra keys per tracer: ``'shifted'`` (positions of the shifted
+lattice/randoms) and ``'recon_info'`` (settings used). ::
+
+    mock_dict = newBall.run_hod(newBall.tracers, want_rsd)
+    recon_dict = newBall.run_recon(mock_dict, config['recon_params'])
+
+    # raw P_ell(k) of delta_D - delta_S
+    power = newBall.compute_power(recon_dict, nbins_k, nbins_mu, k_hMpc_max, logk, poles=[0, 2, 4])
+
+    # P_ell(k) and xi_ell(s) with control variates (LCV by default after reconstruction)
+    lcv_pk = newBall.apply_cv(recon_dict, config, stat='pk')
+    lcv_xi = newBall.apply_cv(recon_dict, config, stat='xi')
+
+``apply_cv`` returns both the raw (``'Pk_tr_tr_ell'``, ``'Xi_tr_tr_ell'``) and the
+variance-reduced (``'Pk_tr_tr_ell_lcv'``, ``'Xi_tr_tr_ell_lcv'``) multipoles. With
+``cv_type=None`` it returns only the raw measurement, with :math:`\xi_\ell(s)` obtained by
+Fourier transforming the 3D power spectrum. The pair-counting estimators (``compute_xirppi``,
+``compute_wp``, ``compute_multipole``) ignore :math:`\delta_S` and refuse reconstructed catalogs.
+
+Linear control variates
+~~~~~~~~~~~~~~~~~~~~~~~
+For reconstructed catalogs, the default control variate is the linear one (LCV). It
+uses the initial conditions density field, filtered at ``kcut``, evolved with the linear
+post-reconstruction model (`Chen, Vlah & White 2019 <https://arxiv.org/abs/1907.00043>`_)
+
+.. math:: \delta_{\rm rec}^{\rm RecSym} = D\,(b + f\mu^2)\,\delta_L, \qquad \delta_{\rm rec}^{\rm RecIso} = D\,(b + f(1-\mathcal{S})\mu^2)\,\delta_L,
+
+with :math:`\mathcal{S}(k) = e^{-k^2R^2/2}`, whose mean power spectrum is known from linear
+theory. The bias of the reconstructed field is fit at :math:`k <` ``kmax_fit``; the
+convention and smoothing radius are taken from the reconstructed catalog. LCV is
+configured with an ``lcv_params`` block, and ``power_params`` (with ``nbins_mu: 1`` and
+``poles`` a subset of ``[0, 2, 4]``)::
+
+    lcv_params:
+        lcv_dir: "/path/to/lcv_scratch/"
+        ic_dir: "/global/cfs/projectdirs/desi/cosmosim/Abacus/ic/"
+        nmesh: 576                       # must match power_params['nmesh'] and the IC grid
+        kcut: 0.4523893421169302         # k_Ny/2
+        # optional: kmax_fit (0.08), sg_window (21), k0_window, dk_window, beta1_k
+
+Before the first use for a given simulation and ``nmesh``, save the filtered initial
+conditions and the linear templates (and window function)::
+
+    python -m abacusnbody.hod.zcv.ic_fields --path2config PATH2CONFIG
+    python -m abacusnbody.hod.zcv.linear_fields --path2config PATH2CONFIG
+    python -m abacusnbody.hod.zcv.linear_fields --path2config PATH2CONFIG --save_3D_power  # for xi
+
+``ic_fields`` reads ``zcv_params`` if present, so either point ``zcv_dir`` and
+``lcv_dir`` to the same directory or only give ``lcv_params`` when running it. An
+example of the full pipeline is given in ``scripts/hod/run_recon.py``. LCV currently
+requires ``want_rsd: True`` and a single tracer; ZCV is not available after
+reconstruction.
+
 Light Cones
 -----------
 AbacusHOD supports generating HOD mock catalogs from halo light cone catalogs
@@ -246,4 +340,8 @@ API
 .. automodule:: abacusnbody.hod.abacus_hod
    :members:
    :undoc-members:
+   :show-inheritance:
+
+.. automodule:: abacusnbody.hod.recon
+   :members:
    :show-inheritance:

@@ -20,7 +20,7 @@ from abacusnbody.analysis.power_spectrum import (
 )
 from abacusnbody.metadata import get_meta
 
-from .ic_fields import compress_asdf
+from .ic_fields import compress_asdf, load_asdf_data
 
 try:
     from classy import Class
@@ -33,6 +33,36 @@ except ImportError as e:
 from asdf.exceptions import AsdfWarning
 
 warnings.filterwarnings('ignore', category=AsdfWarning)
+
+
+def _get_rec_settings(config):
+    """
+    LCV: reconstruction convention ('recsym' or 'reciso') and smoothing radius R,
+    read from ``recon_params`` (falling back to the legacy ``HOD_params`` keys
+    ``rec_algo`` and ``smoothing``). R is None for RecSym.
+    """
+    recon_params = config.get('recon_params') or {}
+    if 'convention' in recon_params:
+        rec_algo = recon_params['convention']
+        R = recon_params.get('smoothing_radius')
+    else:
+        rec_algo = config['HOD_params']['rec_algo']
+        R = config['HOD_params'].get('smoothing')
+    rec_algo = rec_algo.lower()
+    if rec_algo == 'recsym':
+        R = None
+    elif rec_algo == 'reciso':
+        assert R is not None, 'RecIso requires the smoothing radius'
+    else:
+        raise ValueError(f'Unknown reconstruction convention {rec_algo!r}')
+    return rec_algo, R
+
+
+def _along_k(x, spectra):
+    """Reshape the k-dependent array ``x`` to broadcast against ``spectra`` (k on axis 1)."""
+    shape = [1] * np.ndim(spectra)
+    shape[1] = len(x)
+    return np.reshape(x, shape)
 
 
 def combine_spectra(k, spectra, bias_params, rsd=False, numerical_nabla=False):
@@ -167,7 +197,7 @@ def combine_cross_kaiser_spectra(
         S = np.exp(-(k**2) * R**2 / 2.0)
         f_eff = f_growth * (1.0 - S)
         if rsd:
-            f_eff = f_eff.reshape(1, len(k), 1)
+            f_eff = _along_k(f_eff, spectra_dict['P_ell_delta_tr'])
             pk = D * (
                 bias * spectra_dict['P_ell_delta_tr']
                 + f_eff * spectra_dict['P_ell_deltamu2_tr']
@@ -212,7 +242,7 @@ def combine_kaiser_spectra(k, spectra_dict, D, bias, f_growth, rec_algo, R, rsd=
         S = np.exp(-(k**2) * R**2 / 2.0)
         f_eff = f_growth * (1.0 - S)
         if rsd:
-            f_eff = f_eff.reshape(1, len(k), 1)
+            f_eff = _along_k(f_eff, spectra_dict['P_ell_delta_delta'])
             pk = D**2 * (
                 2.0 * bias * f_eff * spectra_dict['P_ell_deltamu2_delta']
                 + f_eff**2 * spectra_dict['P_ell_deltamu2_deltamu2']
@@ -323,15 +353,15 @@ def combine_field_spectra_k3D_lcv(
         f_eff = f_eff.reshape(nmesh, nmesh, nmesh)
     elif rec_algo == 'recsym':
         f_eff = f_growth
-    pk_tt = asdf.open(power_rsd_tr_fns[0])['data']['P_k3D_tr_tr']
+    pk_tt = load_asdf_data(power_rsd_tr_fns[0])['P_k3D_tr_tr']
     pk_ll = D**2 * (
-        2.0 * bias * f_eff * asdf.open(power_lin_fns[1])['data']['P_k3D_deltamu2_delta']
-        + f_eff**2 * asdf.open(power_lin_fns[2])['data']['P_k3D_deltamu2_deltamu2']
-        + bias**2 * asdf.open(power_lin_fns[0])['data']['P_k3D_delta_delta']
+        2.0 * bias * f_eff * load_asdf_data(power_lin_fns[1])['P_k3D_deltamu2_delta']
+        + f_eff**2 * load_asdf_data(power_lin_fns[2])['P_k3D_deltamu2_deltamu2']
+        + bias**2 * load_asdf_data(power_lin_fns[0])['P_k3D_delta_delta']
     )
     pk_lt = D * (
-        bias * asdf.open(power_rsd_tr_fns[1])['data']['P_k3D_delta_tr']
-        + f_eff * asdf.open(power_rsd_tr_fns[2])['data']['P_k3D_deltamu2_tr']
+        bias * load_asdf_data(power_rsd_tr_fns[1])['P_k3D_delta_tr']
+        + f_eff * load_asdf_data(power_rsd_tr_fns[2])['P_k3D_deltamu2_tr']
     )
     return pk_tt, pk_ll, pk_lt
 
@@ -977,11 +1007,7 @@ def run_lcv(power_rsd_tr_dict, power_lin_dict, config):
     poles = config['power_params']['poles']
 
     # reconstruction algorithm
-    rec_algo = config['HOD_params']['rec_algo']
-    if rec_algo == 'recsym':
-        R = None
-    elif rec_algo == 'reciso':
-        R = config['HOD_params']['smoothing']
+    rec_algo, R = _get_rec_settings(config)
 
     # create save directory
     save_dir = Path(lcv_dir) / sim_name
@@ -1245,11 +1271,7 @@ def run_lcv_field(power_rsd_tr_fns, power_lin_fns, config):
         n_mu_bins = 1
 
     # reconstruction algorithm
-    rec_algo = config['HOD_params']['rec_algo']
-    if rec_algo == 'recsym':
-        R = None
-    elif rec_algo == 'reciso':
-        R = config['HOD_params']['smoothing']
+    rec_algo, R = _get_rec_settings(config)
 
     # create save directory
     save_dir = Path(lcv_dir) / sim_name
@@ -1299,7 +1321,7 @@ def run_lcv_field(power_rsd_tr_fns, power_lin_fns, config):
     )
 
     # compute bias from the monopole
-    pk_tt = asdf.open(power_rsd_tr_fns[0])['data']['P_k3D_tr_tr']
+    pk_tt = load_asdf_data(power_rsd_tr_fns[0])['P_k3D_tr_tr']
     pk_tt = project_3d_to_poles(k_bins, pk_tt, Lbox, poles=[0])[0].flatten() / Lbox**3
     pk_ij = {}
     counter = 0
@@ -1308,7 +1330,7 @@ def run_lcv_field(power_rsd_tr_fns, power_lin_fns, config):
             if i < j:
                 continue
             print('Projecting', i, j)
-            pk = asdf.open(power_lin_fns[counter])['data'][
+            pk = load_asdf_data(power_lin_fns[counter])[
                 f'P_k3D_{keynames[i]}_{keynames[j]}'
             ]
             pk = project_3d_to_poles(k_bins, pk, Lbox, poles=[0])
@@ -1395,10 +1417,14 @@ def run_lcv_field(power_rsd_tr_fns, power_lin_fns, config):
         # beta_proj[np.isclose(var_ll, 0.)] = 0.
     beta_damp = 1 / 2 * (1 - np.tanh((k_binc - k0) / dk_cv)) * beta_proj
     beta_damp = np.atleast_2d(beta_damp)
+    beta_damp[np.isnan(beta_damp)] = 0
     beta_damp[:, : k_binc.searchsorted(beta1_k)] = 1.0
     beta_smooth = np.zeros_like(beta_damp)
     for i in range(beta_smooth.shape[0]):
-        beta_smooth[i, :] = savgol_filter(beta_damp.T[:, i], sg_window, 3)
+        try:
+            beta_smooth[i, :] = savgol_filter(beta_damp.T[:, i], sg_window, 3)
+        except ValueError:
+            warnings.warn('This message should only appear when doing a smoke test.')
     beta_smooth = expand_poles_to_3d(k_binc, beta_smooth, nmesh, Lbox, np.array([0]))
 
     # cross-correlation coefficient

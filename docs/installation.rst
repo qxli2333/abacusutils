@@ -32,6 +32,16 @@ All the pip-installed functionality is pure-Python, using numba for any performa
 routines.  The command-line :doc:`pipes` functionality also becomes available after a
 pip install.
 
+Reconstruction in the HOD module (``AbacusHOD.run_recon``) requires
+`pyrecon <https://github.com/cosmodesi/pyrecon>`_, which is not on PyPI. Install it
+from GitHub with:
+::
+
+    $ pip install git+https://github.com/cosmodesi/pyrecon@main
+
+The ``main`` branch is the OpenMP version; the default (``mpi``) branch also works but
+requires ``pmesh``.
+
 Developers may wish to use:
     * ``abacusutils[test]``: packages required to run the tests
     * ``abacusutils[docs]``: to build the docs
