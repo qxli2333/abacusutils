@@ -1,0 +1,216 @@
+# abacusHF dr2 v2 base lrg2 HOD
+# Comment out the probes you don't need
+# CAREFUL: yaml is super sensitive to spaces - don't use tabs
+
+
+# Simulation parameters
+sim_params:
+    sim_name: 'AbacusSummit_base_c000_ph000'                                 # which simulation
+    # sim_dir: '/mnt/gosling2/bigsims/'                                        # where is the simulation
+    sim_dir: /global/cfs/cdirs/desi/cosmosim/Abacus/
+    output_dir: '/pscratch/sd/q/qinxunli/catalog/abacus/abacushod_mocks/data_mocks_summit_new'          # where to output galaxy mocks
+    subsample_dir: '/pscratch/sd/q/qinxunli/catalog/abacus/abacushod_mocks/data_summit_cleaned/'                 # where to output subsample data
+    z_mock: 0.725                                                              # which redshift slice
+    cleaned_halos: True                                                     # load cleaned halos?
+
+zcv_params:
+    zcv_dir: "/pscratch/sd/q/qinxunli/catalog/abacus/abacushod_mocks/zcv/"
+    ic_dir: "/global/cfs/projectdirs/desi/cosmosim/Abacus/ic/"
+    nmesh: 576
+    kcut: 0.4523893421169302 # k_Ny/2
+    fields: ["1cb", "delta"]
+
+lcv_params:
+    lcv_dir: "/pscratch/sd/q/qinxunli/catalog/abacus/abacushod_mocks/zcv/"
+    ic_dir: "/global/cfs/projectdirs/desi/cosmosim/Abacus/ic/"
+    nmesh: 576
+    kcut: 0.4523893421169302 # k_Ny/2
+
+power_params:
+    nbins_k: 288 # nmesh/2
+    nbins_mu: 1 # since we care only about poles TODO: maybe make skippable
+    poles: [0, 2, 4]
+    k_hMpc_max: 0.9047786842338604 # k_Ny
+    paste: 'TSC'
+    compensated: True
+    interlaced: True
+    logk: False
+    
+prepare_sim:
+    Nparallel_load: 8                                          # number of processes. peak memory usage will increase by this factor.
+    Nthread_per_load: 'auto'                                   # number of threads per process (auto uses the affinity mask)
+
+# HOD parameters
+HOD_params:
+    want_ranks: False               # want to implement satellite profile flexiblities?
+    want_AB: True                  # are you planning on implementing assembly bias (AB)?
+    want_nfw: True
+    # Ndim: 1024                     # size of grid for grid based local environment, we opted to use neighbor count based local environment instead
+    density_sigma: 3               # scale radius in Mpc / h for local density calculation
+    tracer_flags:                  # which tracer do we want?
+        LRG: True
+        ELG: False
+        QSO: False
+    want_rsd: True                 # want RSD?
+    write_to_disk: True
+
+    # parameters for setting up the HOD of LRGs
+    LRG_params:
+        logM_cut: 12.6784
+        logM1: 13.8052
+        sigma: 0.02549
+        alpha: 1.10361
+        kappa: 0.64224
+        alpha_c: 0.26537
+        alpha_s: 0.95662
+        s: 0
+        s_v: 0
+        s_p: 0
+        s_r: 0
+        Acent: 0
+        Asat: 0
+        Bcent: 0
+        Bsat: 0
+        ic: 1.0
+
+    # parameters for setting up the HOD of ELGs
+    ELG_params:
+        p_max: 0.53
+        Q: 10.
+        logM_cut: 12.3
+        kappa: 1.
+        sigma: 0.58
+        logM1: 13.53
+        alpha: 0.9
+        gamma: 4.12
+        A_s: 1.
+        alpha_c: 0
+        alpha_s: 1
+        s: 0
+        s_v: 0
+        s_p: 0
+        s_r: 0
+        Acent: 0
+        Asat: 0
+        Bcent: 0
+        Bsat: 0
+        ic: 1.0
+
+    # parameters for setting up the HOD of ELGs
+    QSO_params:
+        p_max: 0.33
+        logM_cut: 12.21
+        kappa: 1.0
+        sigma: 0.56
+        logM1: 13.94
+        alpha: 0.4
+        A_s: 1.
+        alpha_c: 0
+        alpha_s: 1
+        s: 0
+        s_v: 0
+        s_p: 0
+        s_r: 0
+        Acent: 0
+        Asat: 0
+        Bcent: 0
+        Bsat: 0
+        ic: 1.0
+
+# clustering parameters
+clustering_params:
+#    power_type: 'wp'
+    clustering_type: 'xirppi'
+    bin_params:
+        logmin: -0.77288
+        logmax: 1.47712
+        nbins: 8
+    pimax: 30
+    pi_bin_size: 5
+
+# ===========================================================================================
+# The following dictionaries are for using the provided emcee/likelihood templates. They
+# are not needed for using the AbacusHOD class and running HODs.
+
+# parameters that indicate where the observed data that you would like to fit live.
+data_params:
+    tracer_density_mean:
+        LRG: 3.0103e-4 # (mpc/h)^-3
+    tracer_density_std:
+        LRG: 4.0e-5 # (mpc/h)^-3
+    tracer_combos:
+        LRG_LRG:
+            path2power: '/mnt/marvin1/syuan/scratch/targets_xi/data_xi_target_standard.npz'
+            path2cov: '/mnt/marvin1/syuan/scratch/targets_xi/data_xi_cov_mock_div8.npz'
+#       LRG_ELG:
+#            path2power: '/mnt/marvin1/syuan/scratch/targets_xi/data_xi_target_standard.npz'
+#            path2cov: '/mnt/marvin1/syuan/scratch/targets_xi/data_xi_cov_mock_div8.npz'
+#        ELG_ELG:
+#            path2power: '/mnt/marvin1/syuan/scratch/targets_xi/data_xi_target_standard.npz'
+#            path2cov: '/mnt/marvin1/syuan/scratch/targets_xi/data_xi_cov_mock_div8.npz'
+
+# Parameters to be fitted in MCMC
+# [mapping_index, mean, min, max, std, tr_type]
+fit_params:
+    logM_cut: [0, 13.1, 12.5, 13.8, 0.03, 'LRG']
+    logM1: [1, 14.5, 13.5, 15.5, 0.3, 'LRG']
+    sigma: [2, 0.8, 0.1, 1.5, 0.3, 'LRG']
+    alpha: [3, 1.0, 0.7, 1.5, 0.2, 'LRG']
+    kappa: [4, 0.5, 0.0, 1.0, 0.25, 'LRG']
+
+
+# Configuration parameters for emcee
+ch_config_params:
+    path2output: chains/test
+    chainsPrefix: test
+    use_mpi: 0
+    rerun: 0
+    walkersRatio: 4
+    burninIterations: 2000
+    sampleIterations: 40000
+
+# params to be fit for dynesty
+dynesty_fit_params:
+    logM_cut: [0, 13.3, 0.2, 'LRG']
+    logM1: [1, 14.3, 0.2, 'LRG']
+    sigma: [2, 0.5, 0.2, 'LRG']
+
+# configuration parameter for dynesty
+dynesty_config_params:
+    path2output: dynesty/test
+    chainsPrefix: test
+    rerun: 0
+    nlive: 200
+    bound: 'multi'
+    method: 'unif'
+    maxcall: 10000
+
+# Reconstruction: DESI DR2 baseline (same as the abacusutils defaults, written out explicitly)
+recon_params:
+    want_recon: True
+    engine: 'pyrecon'
+    algorithm: 'IterativeFFTReconstruction'
+    convention: 'recsym'
+    smoothing_radius: {LRG: 15., ELG: 15., QSO: 30.}   # Mpc/h
+    nmesh: 576
+    bias: {LRG: 2.0, ELG: 1.2, QSO: 2.1}
+    f: null                                            # simulation f_growth at z_mock
+    los: 'z'
+    shifted_field: 'lattice'
+    cv_type: 'lcv'
+
+# BAO fit: DESI DR2 baseline (same as the abacusutils defaults, written out explicitly)
+bao_params:
+    stat: 'xi'
+    data: 'cv'
+    ells: [0, 2]
+    slim: [60., 150., 4.]                  # Mpc/h
+    klim: [0.02, 0.3]                      # h/Mpc, for stat: 'pk'
+    apmode: 'qisoqap'
+    fiducial: 'simulation'
+    engine: 'class'
+    broadband: null                        # pcs2 for xi, pcs for pk
+    sigma_priors: null                     # DESI LRG: pre (9, 4.5), post (6, 3), widths (2, 1)
+    covariance: 'gaussian'
+    cov_cv_reduction: True
+    method: 'profile'

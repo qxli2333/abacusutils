@@ -7,6 +7,7 @@ from importlib import resources
 
 import asdf
 import msgpack
+import numpy as np
 
 metadata = None
 metadata_fns = [
@@ -51,9 +52,15 @@ def get_meta(simname, redshift=None):
                         simtree['state'].data, strict_map_key=False
                     )
                     if 'CLASS_power_spectrum' in simtree:
-                        metadata[sim]['CLASS_power_spectrum'] = simtree[
-                            'CLASS_power_spectrum'
-                        ]
+                        class_pk = simtree['CLASS_power_spectrum']
+                        if isinstance(class_pk, dict) and 'columns' in class_pk:
+                            # asdf-astropy is not installed: the table was read
+                            # as a raw dict. Make it indexable by column name.
+                            class_pk = {
+                                col['name']: np.asarray(col['data'])
+                                for col in class_pk['columns']
+                            }
+                        metadata[sim]['CLASS_power_spectrum'] = class_pk
     if simname not in metadata:
         raise ValueError(
             f'Simulation "{simname}" is not in metadata files "{metadata_fns}"'

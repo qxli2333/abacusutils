@@ -1477,7 +1477,7 @@ class AbacusHOD:
         clustering['mu_binc'] = power['mu_mid'][0]
         return clustering
 
-    def apply_zcv(self, mock_dict, config, load_presaved=False):
+    def apply_zcv(self, mock_dict, config, load_presaved=False, hod_kwargs=None):
         """
         Apply control variates reduction of the variance to a power spectrum observable.
         """
@@ -1629,12 +1629,17 @@ class AbacusHOD:
             if config['HOD_params']['want_rsd']:
                 mock_dict = self.run_hod(
                     self.tracers,
-                    want_rsd=False,
-                    reseed=None,
-                    write_to_disk=False,
-                    Nthread=16,
-                    verbose=False,
-                    fn_ext=None,
+                    **{
+                        **dict(
+                            want_rsd=False,
+                            reseed=None,
+                            write_to_disk=False,
+                            Nthread=16,
+                            verbose=False,
+                            fn_ext=None,
+                        ),
+                        **(hod_kwargs or {}),
+                    },
                 )
                 for tr in mock_dict:
                     # obtain the positions
@@ -1666,7 +1671,7 @@ class AbacusHOD:
         )
         return zcv_dict
 
-    def apply_zcv_xi(self, mock_dict, config, load_presaved=False):
+    def apply_zcv_xi(self, mock_dict, config, load_presaved=False, hod_kwargs=None):
         """
         Apply control variates reduction of the variance to a power spectrum observable.
         """
@@ -1763,12 +1768,17 @@ class AbacusHOD:
             if config['HOD_params']['want_rsd']:
                 mock_dict = self.run_hod(
                     self.tracers,
-                    want_rsd=False,
-                    reseed=None,
-                    write_to_disk=False,
-                    Nthread=16,
-                    verbose=False,
-                    fn_ext=None,
+                    **{
+                        **dict(
+                            want_rsd=False,
+                            reseed=None,
+                            write_to_disk=False,
+                            Nthread=16,
+                            verbose=False,
+                            fn_ext=None,
+                        ),
+                        **(hod_kwargs or {}),
+                    },
                 )  # TODO: reseed
                 for tr in mock_dict:
                     # obtain the positions
@@ -2207,7 +2217,13 @@ class AbacusHOD:
         return lcv_dict
 
     def apply_cv(
-        self, mock_dict, config, stat='pk', cv_type='default', load_presaved=False
+        self,
+        mock_dict,
+        config,
+        stat='pk',
+        cv_type='default',
+        load_presaved=False,
+        hod_kwargs=None,
     ):
         r"""
         Measure the power spectrum (``stat='pk'``) or correlation function
@@ -2232,6 +2248,11 @@ class AbacusHOD:
         ``cv_type``: str or None
             ``'default'``, ``'lcv'``, ``'zcv'``, or ``None`` for the raw measurement
             only (computed from ``power_params``; :math:`\xi_\ell(s)` via FFT).
+
+        ``hod_kwargs``: dict, optional
+            extra arguments of ``run_hod`` (e.g. ``reseed``, ``want_nfw``, ``NFW_draw``)
+            for the real-space catalog that ZCV generates by itself; they should match
+            those of the ``run_hod`` call that produced ``mock_dict``. Ignored for LCV.
 
         ``load_presaved``: bool
             reuse the last saved tracer power spectra.
@@ -2274,8 +2295,12 @@ class AbacusHOD:
                     "displacement. Use cv_type='lcv'."
                 )
             if stat == 'pk':
-                return self.apply_zcv(mock_dict, config, load_presaved=load_presaved)
-            return self.apply_zcv_xi(mock_dict, config, load_presaved=load_presaved)
+                return self.apply_zcv(
+                    mock_dict, config, load_presaved=load_presaved, hod_kwargs=hod_kwargs
+                )
+            return self.apply_zcv_xi(
+                mock_dict, config, load_presaved=load_presaved, hod_kwargs=hod_kwargs
+            )
         raise ValueError(f"Unknown cv_type {cv_type!r}; use 'lcv', 'zcv' or None")
 
     def _compute_raw_poles(self, mock_dict, config, stat):

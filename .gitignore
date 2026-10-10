@@ -20,3 +20,10 @@ abacusnbody/metadata/abacussummit_headers.asdf
 abacusnbody/version.py
 issues/
 slurm-*.out
+unknown-0.0-0.tar.bz2
+abacusnbody/analysis/tpcf_corrfunc.py
+scripts/hod/run_hod_changeseed.py
+scripts/hod/run_hod.py
+scripts/hod/tmp.npy
+scripts/hod/config/abacus_hod_lrg_a0_Y22.yaml
+scripts/hod/config/abacus_hod_lrg_a0.yaml
